@@ -874,7 +874,7 @@ async function boot() {
     py.FS.mkdirTree("/data");
     await py.runPythonAsync(`import sys, warnings\nwarnings.filterwarnings("ignore")\nsys.path.insert(0, "${SITE}")\nfrom marsad_analytics import webapp as W\nfrom marsad_analytics import chat as CH\nfrom marsad_analytics import validate as V\nfrom marsad_analytics import draft as DR`);
     W = py.globals.get("W"); CH = py.globals.get("CH"); VERSION = W.version(); V = py.globals.get("V"); DR = py.globals.get("DR");
-    REG = JSON.parse(W.registry_json()); PL = REG.plain;
+    REG = dropGone(JSON.parse(W.registry_json())); PL = REG.plain;
     engine("Ready", "ready");
     if (LANG === "ar") setLang("ar");
     try { dl = await window.claude?.use?.("downloads"); } catch (e) { dl = null; }
@@ -908,6 +908,19 @@ function glossCatalog() {
   return Object.fromEntries(Object.entries(en).map(([id, val]) => [id, [PL.ar.gloss[id] || val[0], val[1]]]));
 }
 const trUI = t => LANG === "ar" ? (PL?.ar?.ui?.[t] || t) : t;
+// Analyses this build cannot run, taken out where the page first reads the registry, so they are
+// absent from the menu, the counts, the Overview, the report and the help, rather than listed with a
+// notice that they need something this page has no way to reach.
+const GONE = ["FRAME-7", "FRAME-8", "FRAME-9", "FRAME-10", "FRAME-11", "FRAME-14", "FRAME-12", "FRAME-13", "SPREAD-7", "SPREAD-8", "SPREAD-9", "TOPIC-2", "TOPIC-3", "PLAN-offensive", "PLAN-hope", "PLAN-sarcasm"];
+function dropGone(reg) {
+  reg.cards = (reg.cards || []).filter(c => !GONE.includes(c.id));
+  const P = reg.plain;
+  if (P) {
+    GONE.forEach(id => { delete P.cards[id]; });
+    P.planned = (P.planned || []).filter(x => !GONE.includes(x.id));
+  }
+  return reg;
+}
 function sections() { if (!PL) return []; if (LANG !== "ar") return PL.sections; const A = PL.ar.sections; return PL.sections.map(x => A[x.id] ? {...x, title: A[x.id][0], question: A[x.id][1], intro: A[x.id][2]} : x); }
 function itemsOf(sec) {
   if (!PL) return [];
@@ -975,6 +988,7 @@ window.addEventListener("scroll", hideTip, true);
 
 // ------------------------------------------------------------------ navigation
 function go(v) {
+  if (v.page === "card" && GONE.includes(v.id)) v = {page: "overview"};
   view = v; hideTip(); if (v.page === "card" && v.id) noteRecent(v.id); try { localStorage.setItem("marsad_last", JSON.stringify(v)); } catch (e) {} render(); window.scrollTo({top: 0}); try { history.replaceState(null, "", "#" + (v.page === "card" ? "c-" + v.id : v.page === "section" ? "s-" + v.section : v.page === "study" ? "q-" + v.id : v.page === "help" ? MarsadHelp.hashFor(v.route || {view: "home"}) : v.page)); } catch (e) {} }
 const helpRoute = k => ({page: "help", route: MarsadHelp.routeFromHash(k)});
 function fromHash() {
@@ -1991,7 +2005,7 @@ async function loadData(settings) {
       : {analysis_tz: "UTC", source_tz: "UTC", weekend: "sat-sun",
          arabic_segmentation: $("#arseg") ? $("#arseg").checked : ARSEG};
     SCAN = JSON.parse(W.load_files(py.toPy(paths), py.toPy(st), $("#platform")?.value || "auto", py.toPy(labels), files.length > 1 ? loadMode : "combine"));
-    REG = JSON.parse(W.registry_json()); PL = REG.plain; LEX = JSON.parse(W.lexicon_names());
+    REG = dropGone(JSON.parse(W.registry_json())); PL = REG.plain; LEX = JSON.parse(W.lexicon_names());
     for (const k of Object.keys(results)) delete results[k];
     for (const k of Object.keys(params)) delete params[k];
     saved.clear();
@@ -2709,7 +2723,7 @@ async function applyPrepare(o) {
   busy(true, "Preparing posts"); await tick();
   try {
     SCAN = JSON.parse(W.prepare(py.toPy(o)));
-    REG = JSON.parse(W.registry_json()); PL = REG.plain;
+    REG = dropGone(JSON.parse(W.registry_json())); PL = REG.plain;
     for (const k of Object.keys(results)) delete results[k];
     for (const k of Object.keys(fileSel)) delete fileSel[k];
     for (const id of ["TIME-1", "TIME-2", "WORDS-1", "WHO-2", "DATA-4"]) if (regCard(id)?.available) runQuiet(id, COMPARE() && id === "TIME-1" ? (params[id] = {split: "dataset"}) : undefined);
@@ -2922,7 +2936,7 @@ async function openProject(file) {
   loadMode = p.load_mode || "combine";
   await loadData(p.settings);
   try {
-    if (p.prepared && Object.keys(p.prepared).length) { SCAN = JSON.parse(W.prepare(py.toPy(p.prepared))); REG = JSON.parse(W.registry_json()); PL = REG.plain; for (const k of Object.keys(results)) delete results[k]; }
+    if (p.prepared && Object.keys(p.prepared).length) { SCAN = JSON.parse(W.prepare(py.toPy(p.prepared))); REG = dropGone(JSON.parse(W.registry_json())); PL = REG.plain; for (const k of Object.keys(results)) delete results[k]; }
     Object.assign(params, p.params || {});
     if (p.custom) { Object.assign(CUSTOM, p.custom); saveCustom(); }
     for (const id of p.report || []) if (regCard(id)) { saved.add(id); }
@@ -2969,7 +2983,7 @@ function preparePage() {
     busy(true, "Preparing posts"); await tick();
     try {
       SCAN = JSON.parse(W.prepare(py.toPy(o)));
-      REG = JSON.parse(W.registry_json()); PL = REG.plain;
+      REG = dropGone(JSON.parse(W.registry_json())); PL = REG.plain;
       for (const k of Object.keys(results)) delete results[k];
       for (const k of Object.keys(fileSel)) delete fileSel[k];
       for (const id of ["TIME-1", "TIME-2", "WORDS-1", "WHO-2", "DATA-4"]) if (regCard(id)?.available) runQuiet(id, COMPARE() && id === "TIME-1" ? (params[id] = {split: "dataset"}) : undefined);

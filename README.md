@@ -2,7 +2,7 @@
 
 # MARSAD Studio
 
-A social media and text analysis dashboard that runs entirely in your browser. Load a file and get 103
+A social media and text analysis dashboard that runs entirely in your browser. Load a file and get 90
 analyses over it. Nothing is installed, no account is needed, and the file never leaves your computer:
 the Python that does the work runs inside the page itself.
 
@@ -23,24 +23,26 @@ tells you which columns it matched to what.
 engagement columns, mixed time zones, reach reported where interactions are not: each one is stated above
 the results in plain words, with the number of rows it affects.
 
-**Runs 103 analyses**, in the sections the menu shows.
+**Runs 90 analyses**, in the sections the menu shows.
 
 | Section | Analyses |
 | --- | --- |
 | Society | 17 |
-| Spread and facts | 15 |
 | Words | 11 |
-| Feelings and tone | 11 |
+| Spread and facts | 10 |
 | Ways of speaking | 10 |
 | Reactions | 10 |
 | When | 8 |
 | People | 8 |
 | Check my data | 7 |
-| Topics | 3 |
+| Feelings and tone | 5 |
 | My report | 3 |
+| Topics | 1 |
 
-Three more appear under Feelings and tone, named and marked as planned, with no button that pretends
-otherwise.
+Every one of them runs here. Analyses that need a GPU language model, a Python package with no browser
+build, or an API are not in this version at all, rather than listed with a notice that they cannot run.
+What is left covers the same ground with word lists built for Arabic: sentiment, emotion, offensive
+language, propaganda-technique wording and the Society measures all work on your own file.
 
 **Handles a file too large for a browser.** Above 40 MB the file is not opened. It is read in slices
 instead, which costs no memory, and you are told how many rows it has and what columns it carries. From
