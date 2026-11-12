@@ -919,8 +919,8 @@ const trUI = t => LANG === "ar" ? (PL?.ar?.ui?.[t] || t) : t;
 // Analyses served by a language model the page runs itself (nlp/): they leave GONE when this browser can run it.
 const NLP_OK = !!(window.MarsadNLP && MarsadNLP.supported());
 const EMB_CARDS = ["TOPIC-3", "TOPIC-4", "TOPIC-5", "SPREAD-14"];   // analyses that read the posts' meaning vectors
-const NLP_CARDS = NLP_OK ? EMB_CARDS.concat(window.MARSAD_MODELS?.sentiment ? ["FRAME-7"] : []) : [];
-const GONE = ["FRAME-7", "FRAME-8", "FRAME-9", "FRAME-10", "FRAME-11", "FRAME-14", "FRAME-12", "FRAME-13", "SPREAD-7", "SPREAD-8", "SPREAD-9", "TOPIC-3", "TOPIC-4", "TOPIC-5", "SPREAD-14", "PLAN-offensive", "PLAN-hope"].filter(id => !NLP_CARDS.includes(id));
+const NLP_CARDS = NLP_OK ? EMB_CARDS.concat(window.MARSAD_MODELS?.sentiment ? ["FRAME-7"] : [], window.MARSAD_MODELS?.ner ? ["WORDS-13"] : []) : [];
+const GONE = ["FRAME-7", "FRAME-8", "FRAME-9", "FRAME-10", "FRAME-11", "FRAME-14", "FRAME-12", "FRAME-13", "SPREAD-7", "SPREAD-8", "SPREAD-9", "TOPIC-3", "TOPIC-4", "TOPIC-5", "SPREAD-14", "WORDS-13", "PLAN-offensive", "PLAN-hope"].filter(id => !NLP_CARDS.includes(id));
 function dropGone(reg) {
   reg.cards = (reg.cards || []).filter(c => !GONE.includes(c.id));
   const P = reg.plain;
@@ -2261,11 +2261,63 @@ async function nlpConcepts(file) {
     return true;
   } catch (e) { busy(false); return nlpFail(e); }
 }
+// A run of a classifier done before in this browser on the same posts: the sample first, then all posts.
+async function nlpSaved(kind, spec, arabicOnly, file) {
+  const cap = MARSAD_MODELS.sample || 5000;
+  for (const all of [false, true]) {
+    const t = JSON.parse(W.browser_texts(arabicOnly, all ? 0 : cap, file || null));
+    const ck = [kind, spec.id, MarsadNLP.hash(t.texts)].join("|");
+    const r = await MarsadNLP.cacheGet(ck);
+    if (r) return {t, r};
+    if (t.eligible <= cap) break;
+  }
+  return null;
+}
+// WORDS-13: names from the configured named-entity model (nlp/models.js)
+async function nlpNames(file) {
+  if (JSON.parse(W.entity_status(file || null))) return true;
+  const spec = MARSAD_MODELS.ner, cap = MARSAD_MODELS.sample || 5000;
+  const saved = await nlpSaved("ner", spec, true, file);
+  if (saved) {
+    W.set_entities(JSON.stringify(saved.r.names), JSON.stringify(saved.t.pos), spec.label || spec.id, saved.t.eligible,
+                   file || null, JSON.stringify(spec.types || {}), spec.note || "");
+    return true;
+  }
+  const n = nlpEligible(true, file);
+  const c = await nlpChoice(`<article class="panel nlp-panel"><h3 class="panel-title">${tU("This analysis uses a language model that runs in your browser")}</h3>
+    <p>${tU("Your posts stay on this computer. The model is downloaded once and your browser keeps it for next time.")} ${tU("Each post is read up to its first 600 characters.")}</p>
+    <div class="nlp-opts"><label class="cb"><input type="radio" name="nlpmodel" value="ner" checked> <b>${esc(spec.label || spec.id)}</b>: ${esc(trUI(spec.languages || ""))}, ${spec.mb || "?"} MB · ${fmt(n)} ${tU("posts")}</label></div>
+    ${n > cap ? `<div class="nlp-opts"><label class="cb"><input type="radio" name="nlpn" value="sample" checked> ${tU("A random sample of")} ${fmt(cap)} ${tU("posts (a few minutes on a laptop)")}</label><label class="cb"><input type="radio" name="nlpn" value="all"> ${tU("All posts (can take much longer; the time left is shown as it runs)")}</label></div>` : ""}
+    <button class="btn primary" id="nlpgo">${tU("Download the model and run")}</button></article>`);
+  if (!c) return false;
+  MarsadStats.event(`model/ner/${c.all ? "all" : "sample"}`);
+  try {
+    const t = JSON.parse(W.browser_texts(true, c.all ? 0 : cap, file || null));
+    const ck = ["ner", spec.id, MarsadNLP.hash(t.texts)].join("|");
+    let r = await MarsadNLP.cacheGet(ck);
+    if (!r) {
+      $("#cardbody").innerHTML = nlpProgressBox("Finding names with the language model");
+      r = await MarsadNLP.run("ner", spec, t.texts, nlpReporter("posts"));
+      r = {names: r.names};
+      await MarsadNLP.cachePut(ck, r);
+    }
+    W.set_entities(JSON.stringify(r.names), JSON.stringify(t.pos), spec.label || spec.id, t.eligible, file || null,
+                   JSON.stringify(spec.types || {}), spec.note || "");
+    return true;
+  } catch (e) { return nlpFail(e); }
+}
 // FRAME-7: sentiment labels from the configured classifier (nlp/models.js)
 async function nlpSentiment(file) {
   if (JSON.parse(W.label_status("sentiment", file || null))) return true;
   const spec = MARSAD_MODELS.sentiment, cap = MARSAD_MODELS.sample || 5000;
   const arabicOnly = /^arabic$/i.test(spec.languages || "");
+  const saved = await nlpSaved("clf", spec, arabicOnly, file);
+  if (saved) {
+    W.set_labels("sentiment", JSON.stringify(saved.r.labels), JSON.stringify(Array.from(saved.r.scores)), JSON.stringify(saved.t.pos),
+                 spec.label || spec.id, saved.t.eligible, file || null, spec.note || "");
+    REG = dropGone(JSON.parse(W.registry_json())); PL = REG.plain;
+    return true;
+  }
   const n = nlpEligible(arabicOnly, file);
   const c = await nlpChoice(`<article class="panel nlp-panel"><h3 class="panel-title">${tU("This analysis uses a language model that runs in your browser")}</h3>
     <p>${tU("Your posts stay on this computer. The model is downloaded once and your browser keeps it for next time.")}</p>
@@ -2273,6 +2325,7 @@ async function nlpSentiment(file) {
     ${n > cap ? `<div class="nlp-opts"><label class="cb"><input type="radio" name="nlpn" value="sample" checked> ${tU("A random sample of")} ${fmt(cap)} ${tU("posts (a few minutes on a laptop)")}</label><label class="cb"><input type="radio" name="nlpn" value="all"> ${tU("All posts (can take much longer; the time left is shown as it runs)")}</label></div>` : ""}
     <button class="btn primary" id="nlpgo">${tU("Download the model and run")}</button></article>`);
   if (!c) return false;
+  MarsadStats.event(`model/sentiment/${c.all ? "all" : "sample"}`);
   try {
     const t = JSON.parse(W.browser_texts(arabicOnly, c.all ? 0 : cap, file || null));
     const ck = ["clf", spec.id, MarsadNLP.hash(t.texts)].join("|");
@@ -2306,7 +2359,8 @@ async function cardPage(id) {
   const file = COMPARE() && !splitKey(id) ? (fileSel[id] || "") : "";
   if (r && (r.file || "") !== file) r = null;
   if (!r && NLP_CARDS.includes(id)) {
-    const ok = id === "FRAME-7" ? await nlpSentiment(file) : id === "TOPIC-3" ? await nlpConcepts(file) : await nlpEmbeddings(file);
+    const ok = id === "FRAME-7" ? await nlpSentiment(file) : id === "WORDS-13" ? await nlpNames(file)
+             : id === "TOPIC-3" ? await nlpConcepts(file) : await nlpEmbeddings(file);
     if (!ok || view.page !== "card" || view.id !== id) return;
   }
   if (!r) {

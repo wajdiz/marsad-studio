@@ -77,6 +77,45 @@ async function classify({id, spec, texts, batch}) {
   self.postMessage({id, type: "result", labels, scores, device}, [scores.buffer]);
 }
 
+// Names from token labels. BERT splits a word into pieces ("##" marks a piece that continues the word before); models
+// like CAMeLBERT NER are trained on the first piece of each word only, so the label of a word is the label of its first
+// piece, whatever the other pieces got. Words are then joined into names by their B-/I- tags.
+export function groupNames(tokens) {
+  const words = [];
+  for (const t of tokens) {
+    const w = String(t.word);
+    if (/^\[(PAD|CLS|SEP|UNK|MASK)\]$/.test(w)) { words.push({text: "", entity: "O", score: 0}); continue; }
+    if (w.startsWith("##") && words.length) words[words.length - 1].text += w.slice(2);
+    else words.push({text: w, entity: t.entity, score: t.score});
+  }
+  const names = [];
+  let open = null;
+  for (const w of words) {
+    const m = /^([BI])-(.+)$/.exec(w.entity || "");
+    if (!m || !/\p{L}/u.test(w.text)) { open = null; continue; }     // punctuation never belongs to a name
+    const [, tag, type] = m;
+    if (tag === "I" && open && open.type === type) { open.text += " " + w.text; open.scores.push(w.score); }
+    else { open = {text: w.text, type, scores: [w.score]}; names.push(open); }
+  }
+  return names.filter(n => /\p{L}/u.test(n.text))            // a name has at least one letter
+              .map(n => [n.text, n.type, n.scores.reduce((a, b) => a + b, 0) / n.scores.length]);
+}
+
+async function ner({id, spec, texts, batch}) {
+  const {p, device} = await getPipe("token-classification", spec, id);
+  const n = texts.length, bs = batch || 16, order = byLength(texts), out = new Array(n);
+  const t0 = performance.now();
+  for (let i = 0; i < n; i += bs) {
+    if (cancelled) throw new Error("cancelled");
+    const idx = order.slice(i, i + bs);
+    let res = await p(idx.map(k => texts[k] || " "), {ignore_labels: []});
+    if (idx.length === 1 && !Array.isArray(res[0])) res = [res];
+    idx.forEach((k, j) => { out[k] = groupNames(res[j] || []); });
+    self.postMessage({id, type: "progress", done: Math.min(n, i + bs), total: n, ms: performance.now() - t0, device});
+  }
+  self.postMessage({id, type: "result", names: out, device});
+}
+
 self.onmessage = async e => {
   const m = e.data;
   if (m.cmd === "cancel") { cancelled = true; return; }
@@ -85,6 +124,7 @@ self.onmessage = async e => {
     setup(m.cfg || {});
     if (m.cmd === "embed") await embed(m);
     else if (m.cmd === "classify") await classify(m);
+    else if (m.cmd === "ner") await ner(m);
     else throw new Error("unknown command " + m.cmd);
   } catch (err) {
     self.postMessage({id: m.id, type: "error", message: String(err && err.message || err)});
