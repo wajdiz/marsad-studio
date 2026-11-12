@@ -394,6 +394,7 @@ details.box>.inner{padding:0 22px 20px}
 .pgrid label{font-size:14px;color:var(--k-blu-35-20);display:block;margin-bottom:4px;font-weight:700}
 .pgrid input[type=text],.pgrid input[type=number],.pgrid select,.pgrid textarea{width:100%;padding:8px 10px;border:1px solid var(--k-tea-75-20);border-radius:8px;background:var(--k-n-100);min-height:42px}
 .howbox p{font-size:15.5px;color:var(--k-blu-30-20)}
+.procrow{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:12px 0;font-size:15px}.procrow .segset{margin:0;flex:none}
 .nlp-panel p{margin:8px 0 12px;color:var(--muted)}.nlp-opts{display:grid;gap:8px;margin:12px 0}.nlp-opts label{font-size:15px}
 .msg{padding:16px 18px;border-radius:12px;background:var(--amber-bg);border:1px solid var(--amber-line);font-size:16px;margin:12px 0;color:var(--k-amb-20-60)}
 .msg.grey{background:var(--k-blu-95-20);border-color:var(--k-blu-90-20);color:var(--k-blu-30-20)}.msg.err{background:var(--k-red-95-80);border-color:var(--k-red-85-60);color:var(--k-red-25-60)}
@@ -741,6 +742,7 @@ const MARSAD_PLATFORM = "https://dev.marsadlab.com/";
 // Arabic prefixes come off before words are counted. On by default; the switch sits with the other
 // settings that change every number, because this one changes every word count.
 let ARSEG = true; try { ARSEG = localStorage.getItem("marsad_arseg") !== "0"; } catch (e) {}
+let ARSTOP = true; try { ARSTOP = localStorage.getItem("marsad_arstop") !== "0"; } catch (e) {}
 let SRC = "own";            // Studio reads files and nothing else
 // Venue codes the Anthology uses for its XML files, offered as suggestions; any code can be typed.
 const ACL_VENUES = ["acl", "emnlp", "naacl", "eacl", "coling", "lrec", "lrec-coling", "arabicnlp",
@@ -1054,17 +1056,45 @@ function setBig(on) {
 function settingsPage(tab) {
   SETTAB = tab || SETTAB || "display";
   const big = document.body.classList.contains("bigtext");
-  const tabs = [["display", "Display"], ["menu", "Menu and analyses"]];
+  const tabs = [["display", "Display"], ["processing", "Processing"], ["menu", "Menu and analyses"]];
   modal(trUI("Settings"), `<div class="settabs" role="tablist">${tabs.map(([k, l]) =>
       `<button role="tab" class="settab${SETTAB === k ? " on" : ""}" data-settab="${k}" aria-selected="${SETTAB === k}">${esc(trUI(l))}</button>`).join("")}</div>
-    <div id="setbody">${SETTAB === "menu" ? customizeBody() : displayBody(big)}</div>
+    <div id="setbody">${SETTAB === "menu" ? customizeBody() : SETTAB === "processing" ? processingBody() : displayBody(big)}</div>
     <p class="small-print" style="margin:14px 0 0" dir="ltr">MARSAD Studio ${esc(VERSION || "?")} \u00b7 build ${esc(BUILD)}</p>
     <div class="opt-actions" style="gap:8px"><button class="btn" data-act="resetall">${esc(trUI("Reset all"))}</button>${SETTAB === "menu" ? `<button class="btn primary" id="cz-go">${esc(trUI("Apply"))}</button>` : ""}</div>`);
   document.querySelectorAll("[data-settab]").forEach(b => b.onclick = () => settingsPage(b.dataset.settab));
   if (SETTAB === "menu") bindCustomize();
+  else if (SETTAB === "processing") bindProcessing();
   else bindDisplay();
 }
 
+function processingBody() {
+  const row = (key, labelHTML, on) => `<div class="procrow"><span>${labelHTML}</span>
+    <div class="segset" role="radiogroup">
+      ${[[true, "On"], [false, "Off"]].map(([v, l]) => `<button role="radio" aria-checked="${on === v}" class="seg${on === v ? " on" : ""}" data-proc="${key}" data-val="${v ? 1 : 0}">${esc(trUI(l))}</button>`).join("")}
+    </div></div>`;
+  const seg = LANG === "ar" ? esc(trUI("Split \u0648\u060c \u0628\u060c \u0644\u060c \u0627\u0644 from words"))
+                            : `Split <bdi dir="rtl">\u0648\u060c \u0628\u060c \u0644\u060c \u0627\u0644</bdi> from words`;
+  return row("seg", seg, ARSEG) + row("stop", esc(trUI("Remove Arabic stop words")), ARSTOP);
+}
+function bindProcessing() {
+  document.querySelectorAll("[data-proc]").forEach(b => b.onclick = async () => {
+    const on = b.dataset.val === "1";
+    if (b.dataset.proc === "stop") {
+      if (on === ARSTOP) return;
+      ARSTOP = on; try { localStorage.setItem("marsad_arstop", on ? "1" : "0"); } catch (e) {}
+      if (W) W.set_arabic_stopwords(on);
+      for (const k of Object.keys(results)) results[k] = null;
+      settingsPage("processing"); render();
+    } else {
+      if (on === ARSEG) return;
+      ARSEG = on; try { localStorage.setItem("marsad_arseg", on ? "1" : "0"); } catch (e) {}
+      settingsPage("processing");
+      if (SCAN && files.length) { closeModal(); await loadData(); }      // words are split when the file is read
+    }
+    toast(trUI("Applied."));
+  });
+}
 function displayBody(big) {
   return `<p>${esc(trUI("These change what you see. No number, denominator or caveat changes with them."))}</p>
     <label for="modesel">${esc(trUI("How much to show"))}</label>
@@ -1157,6 +1187,8 @@ function act(name, el) {
   if (name === "resetfilters") { const n = prepOpts(); FKEYS.forEach(k => delete n[k]); applyPrepare(n); }
   if (name === "resetall") {
     setBig(false); setTheme("system"); setMode("simple");
+    ARSEG = true; ARSTOP = true; try { localStorage.removeItem("marsad_arseg"); localStorage.removeItem("marsad_arstop"); } catch (e) {}
+    if (W) W.set_arabic_stopwords(true);
     CUSTOM.preset = "all"; CUSTOM.off = []; saveCustom(); renderSidebar(); render();
     closeModal(); toast(trUI("Settings reset."));
     return;
@@ -1263,11 +1295,6 @@ function srcBody(again) {
       <div id="filelist"></div>
       <div class="uprow">
         <span class="small-print">${esc(trUI("Supported formats: .csv, .xlsx, .json, .ndjson"))}</span>
-        ${`<div class="upset-open">
-          <label class="optcheck">${esc(trUI("Arabic words"))}
-            <span><input type="checkbox" id="arseg" ${ARSEG ? "checked" : ""}> ${esc(trUI("Count \u0627\u0644\u062d\u0643\u0648\u0645\u0629 and \u0648\u0627\u0644\u062d\u0643\u0648\u0645\u0629 as one word"))}</span>
-            <span class="small-print">${esc(trUI("Takes the conjunction, preposition and article off the front of a word before it is counted. Words that begin with those letters, such as \u0648\u0632\u064a\u0631, are left alone."))}</span></label>
-        </div>`}
       </div>
       <input type="hidden" id="platform" value="auto">
       <button class="btn primary wide" data-act="load" id="loadbtn" ${files.length && W ? "" : "disabled"}>${esc(trUI("Analyse data"))}</button>`;
@@ -2010,11 +2037,11 @@ async function loadData(settings) {
     const st = settings && settings.analysis_tz
       ? {analysis_tz: settings.analysis_tz, source_tz: settings.source_tz || "UTC",
          weekend: settings.weekend || "auto",
-         arabic_segmentation: settings.arabic_segmentation !== false}
+         arabic_segmentation: settings.arabic_segmentation !== false, arabic_stopwords: ARSTOP}
       // No control sets these any more: dates are read and shown in UTC, and the weekend is the
       // international Saturday and Sunday. A file whose times carry a zone is still read as written.
       : {analysis_tz: "UTC", source_tz: "UTC", weekend: "sat-sun",
-         arabic_segmentation: $("#arseg") ? $("#arseg").checked : ARSEG};
+         arabic_segmentation: ARSEG, arabic_stopwords: ARSTOP};
     SCAN = JSON.parse(W.load_files(py.toPy(paths), py.toPy(st), $("#platform")?.value || "auto", py.toPy(labels), files.length > 1 ? loadMode : "combine"));
     REG = dropGone(JSON.parse(W.registry_json())); PL = REG.plain; LEX = JSON.parse(W.lexicon_names());
     MarsadStats.event(`file-loaded/${MarsadStats.sizeBand(SCAN.posts || 0)}/${SCAN.platform || "other"}`);
@@ -3351,6 +3378,7 @@ function about() {
     <tr><td>${L("Time zone")}</td><td>${esc(trUI(s.info.timezone_note || s.settings.analysis_tz))}</td></tr>
     <tr><td>${L("Weekend")}</td><td>${esc(trUI(s.info.weekend_note || s.settings.weekend))}</td></tr>
     <tr><td>${L("Arabic words")}</td><td>${esc(trUI(s.settings.arabic_segmentation === false ? "prefixes left on" : "prefixes taken off before counting"))}</td></tr>
+    <tr><td>${L("Arabic stop words")}</td><td>${esc(trUI(ARSTOP ? "removed" : "kept"))}</td></tr>
     <tr><td>${L("Information found")}</td><td>${Object.entries(s.capabilities).filter(([, v]) => v).map(([k]) => need(k)).join(", ")}</td></tr>
     <tr><td>${L("Not in this file")}</td><td>${Object.entries(s.capabilities).filter(([, v]) => !v).map(([k]) => need(k)).filter(x => !x.startsWith("has_")).join(", ")}</td></tr></table>
     ${(s.completeness || []).length ? `<h3 class="mh">${L("How complete is each field?")}${iMark(trUI("Share of the loaded posts that have a value. Analyses that need a field use only the posts that have it."))}</h3><table class="g"><tr><th>${L("Field")}</th><th>${L("Posts with a value")}</th></tr>${s.completeness.map(c => `<tr><td>${esc(trUI(COLNAMES[c.field] || c.field))}</td><td>${c.in_file ? `<span class="meter"><span style="width:${c["present_%"]}%"></span></span> ${c["present_%"]}%` : L("not in the file")}</td></tr>`).join("")}</table>` : ""}
