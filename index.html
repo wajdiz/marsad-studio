@@ -917,8 +917,9 @@ const trUI = t => LANG === "ar" ? (PL?.ar?.ui?.[t] || t) : t;
 // notice that they need something this page has no way to reach.
 // Analyses served by a language model the page runs itself (nlp/): they leave GONE when this browser can run it.
 const NLP_OK = !!(window.MarsadNLP && MarsadNLP.supported());
-const NLP_CARDS = NLP_OK ? ["TOPIC-3"].concat(window.MARSAD_MODELS?.sentiment ? ["FRAME-7"] : []) : [];
-const GONE = ["FRAME-7", "FRAME-8", "FRAME-9", "FRAME-10", "FRAME-11", "FRAME-14", "FRAME-12", "FRAME-13", "SPREAD-7", "SPREAD-8", "SPREAD-9", "TOPIC-3", "PLAN-offensive", "PLAN-hope"].filter(id => !NLP_CARDS.includes(id));
+const EMB_CARDS = ["TOPIC-3", "TOPIC-4", "TOPIC-5", "SPREAD-14"];   // analyses that read the posts' meaning vectors
+const NLP_CARDS = NLP_OK ? EMB_CARDS.concat(window.MARSAD_MODELS?.sentiment ? ["FRAME-7"] : []) : [];
+const GONE = ["FRAME-7", "FRAME-8", "FRAME-9", "FRAME-10", "FRAME-11", "FRAME-14", "FRAME-12", "FRAME-13", "SPREAD-7", "SPREAD-8", "SPREAD-9", "TOPIC-3", "TOPIC-4", "TOPIC-5", "SPREAD-14", "PLAN-offensive", "PLAN-hope"].filter(id => !NLP_CARDS.includes(id));
 function dropGone(reg) {
   reg.cards = (reg.cards || []).filter(c => !GONE.includes(c.id));
   const P = reg.plain;
@@ -2204,7 +2205,10 @@ async function nlpEmbeddings(file) {
     const ck = ["emb", spec.id, spec.keep_dim || spec.dim, MarsadNLP.hash(t.texts)].join("|");
     return {spec, t, ck, hit: await MarsadNLP.cacheGet(ck)};
   };
-  const store = (x, data, dim) => W.set_embeddings(data, JSON.stringify(x.t.pos), dim, x.spec.label, x.t.eligible, file || null);
+  const store = (x, data, dim) => {
+    W.set_embeddings(data, JSON.stringify(x.t.pos), dim, x.spec.label, x.t.eligible, file || null);
+    ["TOPIC-1"].concat(EMB_CARDS).forEach(k => { results[k] = null; });   // they were read from other vectors
+  };
   for (const all of [false, true]) {          // done before in this browser? then no question and no wait
     const x = await take(first, all);
     if (x.hit) { store(x, x.hit.data, x.hit.dim); return true; }
@@ -2297,7 +2301,7 @@ async function cardPage(id) {
   const file = COMPARE() && !splitKey(id) ? (fileSel[id] || "") : "";
   if (r && (r.file || "") !== file) r = null;
   if (!r && NLP_CARDS.includes(id)) {
-    const ok = id === "FRAME-7" ? await nlpSentiment(file) : await nlpConcepts(file);
+    const ok = id === "FRAME-7" ? await nlpSentiment(file) : id === "TOPIC-3" ? await nlpConcepts(file) : await nlpEmbeddings(file);
     if (!ok || view.page !== "card" || view.id !== id) return;
   }
   if (!r) {
@@ -2330,7 +2334,7 @@ function pager(id) {
   const prev = list[i - 1], next = list[i + 1];
   return `<nav class="pager" aria-label="Other analyses in ${esc(sec.title)}">${prev ? `<button class="btn" data-go="c-${prev.id}">‹ ${esc(prev.title)}</button>` : `<button class="btn" data-go="s-${sec.id}">‹ ${esc(sec.title)}</button>`}<span class="pos">${i + 1} of ${list.length} in ${esc(sec.title)}</span>${next ? `<button class="btn" data-go="c-${next.id}">${esc(next.title)} ›</button>` : `<button class="btn" data-go="s-${sec.id}">${esc(sec.title)} ›</button>`}</nav>`;
 }
-const NEEDS_INPUT = ["WORDS-4", "WORDS-5", "WORDS-6", "WORDS-7", "FRAME-6", "TIME-4", "FRAME-8", "TOPIC-3"];
+const NEEDS_INPUT = ["WORDS-4", "WORDS-5", "WORDS-6", "WORDS-7", "FRAME-6", "TIME-4", "FRAME-8", "TOPIC-3", "TOPIC-4"];
 function resultHTML(id, r) {
   if (r.status !== "ok") return `<div class="msg ${r.status === "error" ? "err" : "grey"}"><b>${r.status === "error" ? "Something went wrong" : "No result for this file"}</b>${esc((regCard(id) || {}).runtime_gap ? plainGap(regCard(id)) : r.message)}</div>` + optionsBox(id, true);
   const ex = r.explain || {};
