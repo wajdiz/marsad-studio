@@ -3,6 +3,7 @@
 // goatcounter  the code of your GoatCounter site (goatcounter.com, free for non-commercial use). If your dashboard is
 //              https://marsad-studio.goatcounter.com, the code is "marsad-studio".
 // cloudflare   or the token of a Cloudflare Web Analytics site (dash.cloudflare.com, Web Analytics, Add a site).
+// prefix       put in front of every event, so two sites can share one GoatCounter dashboard and stay apart.
 //
 // What is sent: that the page was opened (with the referring site, browser, screen size and, from the network
 // address, the country), which analyses are opened (their ids, such as TOPIC-3), and that a file was loaded, with
@@ -12,6 +13,7 @@
 window.MARSAD_ANALYTICS = Object.assign({
   goatcounter: "marsad-studio",
   cloudflare: "",
+  prefix: "studio/",
   respect_do_not_track: true,
 }, window.MARSAD_ANALYTICS_OVERRIDE || {});
 
@@ -36,7 +38,8 @@ window.MarsadStats = (() => {
     document.head.appendChild(s);
   }
   function send(name) {
-    try { window.goatcounter.count({path: name, title: name, event: true}); } catch (e) { /* a blocked counter is fine */ }
+    const p = (cfg.prefix || "") + name;
+    try { window.goatcounter.count({path: p, title: p, event: true}); } catch (e) { /* a blocked counter is fine */ }
   }
   // name: a short path such as "analysis/TOPIC-3"; only ids and counts, never text from the file
   function event(name) {
