@@ -668,6 +668,25 @@ body.bigtext .explore-label{font-size:19px}
 #chat textarea{flex:1;resize:none;border:1px solid var(--border);border-radius:10px;padding:9px;font:inherit;min-height:42px;max-height:140px}
 #chat form button{background:var(--teal);color:var(--k-n-100);border:0;border-radius:10px;padding:0 16px;font-weight:700;cursor:pointer}
 #chat form button:disabled{opacity:.5;cursor:default}
+
+/* Abir's findings: one sticky toolbar (I-13), word list and language pickers (I-07, I-14), time settings (I-02, I-06) */
+.poststick{position:sticky;top:-1px;z-index:4;background:var(--white);border-bottom:1px solid var(--border);margin:0 0 6px}
+.poststick::before{content:"";position:absolute;inset-inline:-40px;bottom:100%;height:60px;background:var(--white)}
+.poststick .postbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0 4px}
+.poststick .postpager{padding:4px 0 10px}
+fieldset.picker{border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin:0;min-width:0}
+fieldset.picker legend{font-size:13px;font-weight:700;padding:0 4px}
+.pick-q{width:100%;box-sizing:border-box;margin:2px 0 6px}
+.pick-list{max-height:200px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+label.pick{display:flex !important;flex-direction:row !important;align-items:center;gap:8px;font-weight:400 !important;font-size:14px;padding:3px 2px;cursor:pointer}
+label.pick input{margin:0}
+.pick-foot{margin-top:6px}
+.tzline{margin:10px 0 6px}
+.tzline .linkbtn{margin-inline-start:6px}
+.procrow.tzrow{align-items:flex-start}
+.procrow.tzrow label{display:flex;flex-direction:column;gap:2px}
+.procrow .tzin{min-width:260px;font:inherit;padding:6px 8px;border:1px solid var(--border);border-radius:8px}
+.procrow select{font:inherit;padding:6px 8px;border:1px solid var(--border);border-radius:8px}
 </style>
 <link rel="stylesheet" href="help.css">
 </head>
@@ -743,6 +762,36 @@ const MARSAD_PLATFORM = "https://dev.marsadlab.com/";
 // settings that change every number, because this one changes every word count.
 let ARSEG = true; try { ARSEG = localStorage.getItem("marsad_arseg") !== "0"; } catch (e) {}
 let ARSTOP = true; try { ARSTOP = localStorage.getItem("marsad_arstop") !== "0"; } catch (e) {}
+// I-02: two time zones, not one. The file's zone says how to read times that carry none; the display zone is
+// what every hour, day and date on the page is shown in. Times that carry a zone ("Z", "+03:00") are read as written.
+let TZSRC = "UTC", TZOUT = "UTC", WEEKEND = "sat-sun";
+try { TZSRC = localStorage.getItem("marsad_tzsrc") || "UTC"; TZOUT = localStorage.getItem("marsad_tzout") || "UTC";
+      WEEKEND = localStorage.getItem("marsad_weekend") || "sat-sun"; } catch (e) {}
+let TZALL = null;
+function tzNames() {
+  if (TZALL) return TZALL;
+  let n = [];
+  try { n = Intl.supportedValuesOf("timeZone"); } catch (e) { n = ["Asia/Qatar", "Asia/Riyadh", "Asia/Dubai", "Africa/Cairo", "Asia/Beirut", "Africa/Tunis", "Africa/Casablanca", "Europe/London", "Europe/Paris", "America/New_York", "America/Los_Angeles"]; }
+  TZALL = ["UTC", ...n.filter(z => z !== "UTC")];
+  return TZALL;
+}
+// the offset that applies today, read from the browser's own zone database, so daylight saving is right
+function tzOffset(z) {
+  try {
+    const p = new Intl.DateTimeFormat("en-US", {timeZone: z, timeZoneName: "longOffset"}).formatToParts(new Date());
+    const o = (p.find(x => x.type === "timeZoneName") || {}).value || "GMT";
+    return o === "GMT" ? "UTC+00:00" : o.replace("GMT", "UTC");
+  } catch (e) { return ""; }
+}
+const tzLabel = z => z === "UTC" ? "UTC (UTC+00:00)" : `${z} (${tzOffset(z)})`;
+const tzFromLabel = v => { const z = String(v || "").replace(/\s*\(UTC[^)]*\)\s*$/, "").trim(); return tzNames().includes(z) ? z : null; };
+const WEEKENDS = [["sat-sun", "Saturday and Sunday"], ["fri-sat", "Friday and Saturday"], ["auto", "Auto (from the countries in the file)"]];
+function timeLine() {
+  const wk = (WEEKENDS.find(w => w[0] === WEEKEND) || WEEKENDS[0])[1];
+  return `<p class="tzline small-print">${esc(trUI("Times in the file"))}: <b dir="ltr">${esc(tzLabel(TZSRC))}</b> \u00b7
+    ${esc(trUI("Shown in"))}: <b dir="ltr">${esc(tzLabel(TZOUT))}</b> \u00b7 ${esc(trUI("Weekend"))}: <b>${esc(trUI(wk))}</b>
+    <button class="linkbtn" data-act="settings" data-settab="processing">${esc(trUI("Change"))}</button></p>`;
+}
 let SRC = "own";            // Studio reads files and nothing else
 // Venue codes the Anthology uses for its XML files, offered as suggestions; any code can be typed.
 const ACL_VENUES = ["acl", "emnlp", "naacl", "eacl", "coling", "lrec", "lrec-coling", "arabicnlp",
@@ -1075,7 +1124,16 @@ function processingBody() {
     </div></div>`;
   const seg = LANG === "ar" ? esc(trUI("Split \u0648\u060c \u0628\u060c \u0644\u060c \u0627\u0644 from words"))
                             : `Split <bdi dir="rtl">\u0648\u060c \u0628\u060c \u0644\u060c \u0627\u0644</bdi> from words`;
-  return row("seg", seg, ARSEG) + row("stop", esc(trUI("Remove Arabic stop words")), ARSTOP);
+  const tz = (key, label, val, help) => `<div class="procrow tzrow"><label for="tz-${key}">${esc(trUI(label))}<span class="fieldhelp">${esc(trUI(help))}</span></label>
+    <input id="tz-${key}" class="tzin" list="tzlist" dir="ltr" autocomplete="off" spellcheck="false" value="${esc(tzLabel(val))}" data-tz="${key}"></div>`;
+  return row("seg", seg, ARSEG) + row("stop", esc(trUI("Remove Arabic stop words")), ARSTOP) +
+    `<h3 class="mh">${esc(trUI("Dates and times"))}</h3>` +
+    tz("src", "Time zone of the times in your file", TZSRC, "Used for times that carry no zone. Times ending in Z or +03:00 are read as written.") +
+    tz("out", "Show dates and hours in", TZOUT, "Busiest hours, days and first and last post are shown in this zone.") +
+    `<div class="procrow"><label for="tz-wk">${esc(trUI("Weekend"))}</label><select id="tz-wk">${WEEKENDS.map(([v, l]) =>
+      `<option value="${v}" ${v === WEEKEND ? "selected" : ""}>${esc(trUI(l))}</option>`).join("")}</select></div>
+    <datalist id="tzlist">${tzNames().map(z => `<option value="${esc(tzLabel(z))}">`).join("")}</datalist>
+    <p class="small-print" id="tz-msg"></p>`;
 }
 function bindProcessing() {
   document.querySelectorAll("[data-proc]").forEach(b => b.onclick = async () => {
@@ -1094,6 +1152,22 @@ function bindProcessing() {
     }
     toast(trUI("Applied."));
   });
+  const reloadTimes = async () => {
+    try { localStorage.setItem("marsad_tzsrc", TZSRC); localStorage.setItem("marsad_tzout", TZOUT); localStorage.setItem("marsad_weekend", WEEKEND); } catch (e) {}
+    if (SCAN && files.length) { closeModal(); await loadData(); }      // times are converted when the file is read
+    else settingsPage("processing");
+    toast(trUI("Applied."));
+  };
+  document.querySelectorAll("[data-tz]").forEach(inp => inp.onchange = async () => {
+    const z = tzFromLabel(inp.value), msg = $("#tz-msg");
+    if (!z) { if (msg) msg.textContent = trUI("Pick a time zone from the list, for example Asia/Qatar."); inp.value = tzLabel(inp.dataset.tz === "src" ? TZSRC : TZOUT); return; }
+    if (inp.dataset.tz === "src") { if (z === TZSRC) return; TZSRC = z; } else { if (z === TZOUT) return; TZOUT = z; }
+    await reloadTimes();
+  });
+  const wk = $("#tz-wk"); if (wk) wk.onchange = async () => { WEEKEND = wk.value; await reloadTimes(); };
+  // a datalist only filters on what is typed, so clear the box when it is focused and show the whole list
+  document.querySelectorAll(".tzin").forEach(inp => { inp.onfocus = () => { inp.dataset.was = inp.value; inp.value = ""; };
+    inp.onblur = () => { if (!inp.value) inp.value = inp.dataset.was || ""; }; });
 }
 function displayBody(big) {
   return `<p>${esc(trUI("These change what you see. No number, denominator or caveat changes with them."))}</p>
@@ -1187,7 +1261,8 @@ function act(name, el) {
   if (name === "resetfilters") { const n = prepOpts(); FKEYS.forEach(k => delete n[k]); applyPrepare(n); }
   if (name === "resetall") {
     setBig(false); setTheme("system"); setMode("simple");
-    ARSEG = true; ARSTOP = true; try { localStorage.removeItem("marsad_arseg"); localStorage.removeItem("marsad_arstop"); } catch (e) {}
+    ARSEG = true; ARSTOP = true; TZSRC = "UTC"; TZOUT = "UTC"; WEEKEND = "sat-sun";
+    try { ["marsad_arseg", "marsad_arstop", "marsad_tzsrc", "marsad_tzout", "marsad_weekend"].forEach(k => localStorage.removeItem(k)); } catch (e) {}
     if (W) W.set_arabic_stopwords(true);
     CUSTOM.preset = "all"; CUSTOM.off = []; saveCustom(); renderSidebar(); render();
     closeModal(); toast(trUI("Settings reset."));
@@ -1297,6 +1372,7 @@ function srcBody(again) {
         <span class="small-print">${esc(trUI("Supported formats: .csv, .xlsx, .json, .ndjson"))}</span>
       </div>
       <input type="hidden" id="platform" value="auto">
+      ${timeLine()}
       <button class="btn primary wide" data-act="load" id="loadbtn" ${files.length && W ? "" : "disabled"}>${esc(trUI("Analyse data"))}</button>`;
   }
   return "";          // SRC never leaves "own" in Studio
@@ -2042,6 +2118,7 @@ async function loadData(settings) {
       // international Saturday and Sunday. A file whose times carry a zone is still read as written.
       : {analysis_tz: "UTC", source_tz: "UTC", weekend: "sat-sun",
          arabic_segmentation: ARSEG, arabic_stopwords: ARSTOP};
+    if (!(settings && settings.analysis_tz)) Object.assign(st, {source_tz: TZSRC, analysis_tz: TZOUT, weekend: WEEKEND});
     SCAN = JSON.parse(W.load_files(py.toPy(paths), py.toPy(st), $("#platform")?.value || "auto", py.toPy(labels), files.length > 1 ? loadMode : "combine"));
     REG = dropGone(JSON.parse(W.registry_json())); PL = REG.plain; LEX = JSON.parse(W.lexicon_names());
     MarsadStats.event(`file-loaded/${MarsadStats.sizeBand(SCAN.posts || 0)}/${SCAN.platform || "other"}`);
@@ -2392,6 +2469,7 @@ async function cardPage(id) {
   }
   if (!r) {
     if (id === "WORDS-3" && (!params[id] || (params[id].reference || "general") === "general")) await ensureWordfreq();
+    if (id === "WORDS-2" && params[id] && params[id].weight === "keyness") await ensureWordfreq();
     busy(true, it.title + (file ? " · " + file : "")); await tick();
     r = runQuiet(id, params[id], file); busy(false);
   }
@@ -2402,7 +2480,7 @@ async function cardPage(id) {
     $("#nlptopics").onclick = async () => { if (await nlpEmbeddings(file)) { results[id] = null; await cardPage(id); } };
   }
   if (r.status === "ok") bindResult(id, r);
-  else { const rr = $("#rerun"); if (rr) rr.onclick = async () => { params[id] = readParams(); results[id] = null; await cardPage(id); }; }
+  else { bindPickers(); const rr = $("#rerun"); if (rr) rr.onclick = async () => { const p = readParams(); if (!pickOk(p)) return; params[id] = p; results[id] = null; await cardPage(id); }; }
   if (COMPARE() && !splitKey(id) && $("#cmptable") && (regCard(id) || {}).cost !== "minutes") compareTable(id);
   else if ($("#cmptable")) $("#cmptable").innerHTML = `<button class="btn small" id="cmpgo">Show key numbers for each file</button>`, $("#cmpgo").onclick = () => compareTable(id);
 }
@@ -2467,9 +2545,23 @@ function methodBlock(id, r) {
     .map(([k, v]) => `${esc((LANG === "ar" && PL.ar?.params?.[k]) || PL.params[k] || human(k))}: <b>${esc(String(Array.isArray(v) ? v.join(", ") : v)).slice(0, 80)}</b>`);
   const nums = Object.entries(sm).filter(([k, v]) => typeof v === "number")
     .slice(0, 8).map(([k, v]) => `${esc(trUI(human(k)))}: <b>${fmt(v)}</b>`);
-  if (!pl.how && !used.length && !nums.length) return "";
+  // I-16: a setting that changes the method replaces the method text; others add one sentence
+  const cur = (r.params && Object.keys(r.params).length ? r.params : (c.params || {})) || {}, def = c.params || {};
+  let how = pl.how;
+  const hb = (PL.how_by || {})[id] || {};
+  for (const [k, vals] of Object.entries(hb)) if (cur[k] != null && vals[cur[k]]) how = vals[cur[k]];
+  const extra = [];
+  for (const [k, v] of Object.entries(cur)) {
+    if (hb[k] || v == null || JSON.stringify(v) === JSON.stringify(def[k])) continue;
+    const t = (PL.how_value || {})[id + ":" + k] || (PL.how_value || {})[k];
+    if (!t) continue;
+    const line = t[v] || (Array.isArray(v) && v.length ? t["*"] : null);
+    if (line) extra.push(line);
+  }
+  if (!how && !used.length && !nums.length) return "";
   return `<details class="methods" open><summary>${esc(trUI("How this was worked out"))}</summary>
-    ${pl.how ? `<p>${esc(trUI(pl.how))}</p>` : ""}
+    ${how ? `<p>${esc(trUI(how))}</p>` : ""}
+    ${extra.length ? `<p><b>${esc(trUI("With these settings"))}:</b> ${extra.map(x => esc(trUI(x))).join(" ")}</p>` : ""}
     ${used.length ? `<p class="small-print"><b>${esc(trUI("Settings used"))}:</b> ${used.join(" \u00b7 ")}</p>` : ""}
     ${nums.length ? `<p class="small-print"><b>${esc(trUI("Numbers behind the chart"))}:</b> ${nums.join(" \u00b7 ")}</p>` : ""}
   </details>`;
@@ -2489,6 +2581,11 @@ function helpFor(k) {
   const ar = LANG === "ar" && PL.ar && PL.ar.param_help && PL.ar.param_help[k];
   return ar || trUI((PL.param_help || {})[k] || "");
 }
+function pickOk(p) {
+  const need = document.querySelector("#optbox fieldset.picker[data-need]");
+  if (need && !(p[need.dataset.k] || []).length) { toast(trUI("Tick at least one word list.")); return false; }
+  return true;
+}
 function closeDrawer() {
   const o = document.getElementById("optbox");
   if (o && !o.hidden) { o.hidden = true; document.body.classList.remove("draweropen"); const b = document.getElementById("optbtn"); if (b) b.focus(); }
@@ -2507,8 +2604,18 @@ function optionsBox(id, open) {
   const f = k => {
     const sm = (results[id] && results[id].summary) || {};
     const v = (k in cur && cur[k] !== null && cur[k] !== "") ? cur[k] : (sm[k] !== undefined && typeof sm[k] !== "object" ? sm[k] : p[k]), fid = `p-${k}`;
-    if (k === "lexicons") return `<label for="${fid}">${lab(k)}</label><select id="${fid}" data-k="${k}" data-t="multi" multiple size="4">${LEX.map(n => `<option ${(Array.isArray(v) ? v : [v]).includes(n) ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
+    // I-07: a multiple <select> needed Ctrl or Cmd to pick lists that are not next to each other, and the chosen
+    // ones scrolled out of sight. Tick boxes, chosen ones first, with a search box.
+    if (k === "lexicons") return checkPicker(fid, k, lab(k), LEX.map(n => [n, n]), Array.isArray(v) ? v : (v ? [v] : []), true);
+    if (k === "languages") return checkPicker(fid, k, lab(k), ((SCAN && SCAN.languages) || []).filter(x => !["und"].includes(x.code))
+      .map(x => [x.code, `${trUI(x.name)} (${Math.round((x.share || 0) * (x.share > 1 ? 1 : 100))}%)`]), Array.isArray(v) ? v : [], false);
     if (["lex_a", "lex_b", "lexicon"].includes(k)) return `<label for="${fid}">${lab(k)}</label><select id="${fid}" data-k="${k}" data-t="str">${LEX.map(n => `<option ${n === v ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
+    if (ch[k] && ["by", "split", "group"].includes(k) && SCAN && Array.isArray(SCAN.group_options)) {
+      // I-08: only the splits this file has. A split on a missing column gave the same chart as no split.
+      const have = new Set(SCAN.group_options), GV = ["time", "author", "source", "country", "fb_category", "owner_type", "language", "dataset", "script", "type", "dialect", "topic", "hashtag"];
+      const opts = ch[k].filter(o => !GV.includes(o) || have.has(o) || JSON.stringify(o) === JSON.stringify(v));
+      return `<label for="${fid}">${lab(k)}</label><select id="${fid}" data-k="${k}" data-t="json">${opts.map(o => `<option value='${esc(JSON.stringify(o))}' ${JSON.stringify(o) === JSON.stringify(v) ? "selected" : ""}>${esc(trUI(o === "none" ? "nothing" : o === true ? "yes" : o === false ? "no" : String(o).replace(/_/g, " ")))}</option>`).join("")}</select>`;
+    }
     if (ch[k]) {
       if (ch[k].some(o => typeof o === "string" && o.includes("<"))) return `<label for="${fid}">${lab(k)}</label><input type="text" id="${fid}" data-k="${k}" data-t="str" list="${fid}-l" value="${esc(v ?? "")}"><datalist id="${fid}-l">${ch[k].map(o => `<option value="${esc(o)}">`).join("")}</datalist>`;
       return `<label for="${fid}">${lab(k)}</label><select id="${fid}" data-k="${k}" data-t="json">${ch[k].map(o => `<option value='${esc(JSON.stringify(o))}' ${JSON.stringify(o) === JSON.stringify(v) ? "selected" : ""}>${esc(trUI(o === "none" ? "nothing" : o === true ? "yes" : o === false ? "no" : String(o).replace(/_/g, " ")))}</option>`).join("")}</select>`;
@@ -2525,10 +2632,30 @@ function optionsBox(id, open) {
     <div class="drawer-foot"><button class="btn" id="optreset">${esc(trUI("Reset to defaults"))}</button><button class="btn primary" id="rerun">${esc(trUI("Apply"))}</button></div>
   </div>`;
 }
+function checkPicker(fid, k, label, items, chosen, needOne) {
+  const on = new Set(chosen.map(String));
+  const sorted = [...items.filter(([v]) => on.has(String(v))), ...items.filter(([v]) => !on.has(String(v)))];
+  return `<fieldset class="picker" id="${fid}" data-k="${k}" data-t="checks"${needOne ? ' data-need="1"' : ""}><legend>${label}</legend>
+    ${items.length > 8 ? `<input type="search" class="pick-q" placeholder="${esc(trUI(k === "lexicons" ? "Search word lists" : "Search"))}" aria-label="${esc(trUI("Search"))}">` : ""}
+    <div class="pick-list">${sorted.map(([v, l]) => `<label class="pick"><input type="checkbox" value="${esc(String(v))}" ${on.has(String(v)) ? "checked" : ""}> <span>${esc(l)}</span></label>`).join("") ||
+      `<span class="small-print">${esc(trUI(k === "languages" ? "All languages" : "Nothing to choose"))}</span>`}</div>
+    <div class="pick-foot small-print"><span class="pick-n">${on.size}</span> ${esc(trUI("selected"))} \u00b7 <button type="button" class="linkbtn pick-clear">${esc(trUI("Clear"))}</button>${k === "languages" && !on.size ? ` \u00b7 ${esc(trUI("All languages"))}` : ""}</div>
+  </fieldset>`;
+}
+function bindPickers(root) {
+  (root || document).querySelectorAll("fieldset.picker").forEach(fs => {
+    const n = fs.querySelector(".pick-n"), upd = () => { n.textContent = fs.querySelectorAll("input[type=checkbox]:checked").length; };
+    fs.querySelectorAll("input[type=checkbox]").forEach(c => c.onchange = upd);
+    const q = fs.querySelector(".pick-q");
+    if (q) q.oninput = () => { const t = q.value.trim().toLowerCase(); fs.querySelectorAll("label.pick").forEach(l => { l.hidden = !!t && !l.textContent.toLowerCase().includes(t); }); };
+    const c = fs.querySelector(".pick-clear"); if (c) c.onclick = () => { fs.querySelectorAll("input[type=checkbox]").forEach(x => { x.checked = false; }); upd(); };
+  });
+}
 function readParams() {
   const out = {};
   document.querySelectorAll("#optbox [data-k]").forEach(el => {
     const k = el.dataset.k, t = el.dataset.t;
+    if (t === "checks") { out[k] = [...el.querySelectorAll("input[type=checkbox]:checked")].map(x => x.value); return; }
     if (t === "multi") out[k] = [...el.selectedOptions].map(o => o.value);
     else if (t === "json") out[k] = JSON.parse(el.value);
     else if (t === "bool") out[k] = el.checked;
@@ -2544,7 +2671,7 @@ const COLNAMES = {node: "Word", before: "Words before", after: "Words after", cr
 const TABLE_FIRST = ["WORDS-4", "WORDS-1", "WHO-1", "SPREAD-8", "SPREAD-1", "DATA-4"];
 const AXIS = {bucket: "Date and time", posts: "Number of posts", "share_%": "Share (%)", count: "Count", freq: "Times used", hour: "Hour of the day", date: "Date", term: "Word", author: "Account", n_posts: "Number of posts", interactions: "Likes, comments and shares"};
 const PLATFORMS = {meta: "Meta Content Library", crowdtangle: "CrowdTangle", meltwater: "Meltwater", reddit: "Reddit", generic: "a table", mixed: "several sources", x: "X (Twitter)"};
-const FIGNAMES = {figure: "Chart", map_3d: "Map of similar posts (3D)", over_time: "Over time", sentiment: "By feeling", distribution: "Overall share", by_language: "By language", above_threshold: "Toxic posts", communities: "Communities", degree_distribution: "Connections per account", bar: "Bar chart", cloud: "Emoji cloud", per_post: "Techniques per post"};
+const FIGNAMES = {overall: "All posts", accounts: "Accounts", clusters: "Clusters", figure: "Chart", map_3d: "Map of similar posts (3D)", over_time: "Over time", sentiment: "By feeling", distribution: "Overall share", by_language: "By language", above_threshold: "Toxic posts", communities: "Communities", degree_distribution: "Connections per account", bar: "Bar chart", cloud: "Emoji cloud", per_post: "Techniques per post"};
 function figList(r) { const f = []; if (r.figure) f.push(["figure", "Chart", r.figure]); for (const [k, v] of Object.entries(r.extra_figures || {})) f.push(["figure:" + k, FIGNAMES[k] || human(k), v]); return f; }
 // the logical order of a category set, from Python, so chart, legend and table agree
 function catOrder(labels) {
@@ -2693,7 +2820,8 @@ function bindResult(id, r) {
   const tb = $("#testbtn"); if (tb) tb.onclick = () => testDiff(id);
   const db = $("#dlbtn"), dm = $("#dlmenu");
   if (db) { db.onclick = e => { e.stopPropagation(); dm.hidden = !dm.hidden; }; document.addEventListener("click", () => { if (dm) dm.hidden = true; }, {once: true}); }
-  const rr = $("#rerun"); if (rr) rr.onclick = async () => { params[id] = readParams(); results[id] = null; await cardPage(id); };
+  bindPickers();
+  const rr = $("#rerun"); if (rr) rr.onclick = async () => { const p = readParams(); if (!pickOk(p)) return; params[id] = p; results[id] = null; await cardPage(id); };
   document.querySelectorAll("[data-dl]").forEach(b => b.onclick = () => { dm.hidden = true; download(id, r, b.dataset.dl, figs); });
 }
 
@@ -3324,20 +3452,20 @@ function showPosts(filter, title, sort, seed, page, fresh) {
   const SORTOPTS = [["interactions", "Most engagement"], ["random", "Random"], ["recent", "Newest"], ["oldest", "Oldest"]];
   const what = {interactions: "by engagement", random: "at random", recent: "newest first", oldest: "oldest first"}[sort];
   const rtl = LANG === "ar";
-  const bar = `<div class="postbar sticky">
+  const bar = `<div class="poststick"><div class="postbar">
       <label>${esc(trUI("Order"))} <select id="ps-sort">${SORTOPTS.map(([v, l]) => `<option value="${v}" ${v === sort ? "selected" : ""}>${esc(trUI(l))}</option>`).join("")}</select></label>
       ${sort === "random" ? `<button class="btn small" id="ps-again">${esc(trUI("Another random set"))}</button>` : ""}
       ${ex.n_matching ? `<button class="btn small" id="ps-csv">${esc(trUI("Download all"))} ${fmt(ex.n_matching)} (CSV)</button>` : ""}
       <label class="hlsw"><input type="checkbox" id="ps-hl" ${PSHL ? "checked" : ""}> ${esc(trUI("Highlight"))}</label>
       <span class="small-print" id="ps-msg"></span>
     </div>
-    <div class="postpager sticky2">
+    <div class="postpager">
       <button class="btn small" id="ps-prev" ${PSPAGE === 0 ? "disabled" : ""} aria-label="${esc(trUI("Previous"))}">${rtl ? "\u203a" : "\u2039"} ${esc(trUI("Previous"))}</button>
       <span class="small-print">${fmt(first)} ${esc(trUI("to"))} ${fmt(last)} ${esc(trUI("of"))} ${fmt(total)}</span>
       <button class="btn small" id="ps-next" ${PSPAGE >= pages - 1 ? "disabled" : ""} aria-label="${esc(trUI("Next"))}">${esc(trUI("Next"))} ${rtl ? "\u2039" : "\u203a"}</button>
       <label>${esc(trUI("Per page"))} <select id="ps-size">${[20, 50, 100].map(v => `<option ${v === PSSIZE ? "selected" : ""}>${v}</option>`).join("")}</select></label>
       ${pages > 1 ? `<label>${esc(trUI("Page"))} <input type="number" id="ps-jump" min="1" max="${pages}" value="${PSPAGE + 1}" style="width:72px"> ${esc(trUI("of"))} ${pages}</label>` : ""}
-    </div>`;
+    </div></div>`;
   const body = ex.posts.length
     ? ex.posts.map((p, i) => `<div class="post"><div class="m">${[p.author, p.created_local, p.platform, p.interactions != null ? fmt(p.interactions) + " " + trUI("engagement") : ""].filter(Boolean).map(esc).join(" \u00b7 ")}${p.url ? ` \u00b7 <a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(trUI("open"))}</a>` : ""} \u00b7 <button class="text-button" data-copy="${i}">${esc(trUI("copy"))}</button></div><div class="t" dir="${p.dir || "auto"}">${PSHL ? (p.text_html || esc(p.text)) : esc(p.text)}</div></div>`).join("")
     : `<p>${esc(trUI("No posts behind this point."))}</p>`;
@@ -3375,6 +3503,8 @@ function about() {
     <tr><td>${L("Accounts")}</td><td>${s.accounts != null ? fmt(s.accounts) : L("not in the file")}</td></tr>
     <tr><td>${L("Languages")}</td><td>${s.languages.map(l => `${esc(trUI(l.name))} ${Math.round(l.share * 100)} %`).join(", ")}</td></tr>
     <tr><td>${L("First and last post")}</td><td>${esc(s.date_from || "-")} ${L("to")} ${esc(s.date_to || "-")}</td></tr>
+    <tr><td>${L("Time zone of the times in your file")}</td><td dir="ltr">${esc(tzLabel(s.settings.source_tz || "UTC"))}</td></tr>
+    <tr><td>${L("Shown in")}</td><td dir="ltr">${esc(tzLabel(s.settings.analysis_tz || "UTC"))}</td></tr>
     <tr><td>${L("Time zone")}</td><td>${esc(trUI(s.info.timezone_note || s.settings.analysis_tz))}</td></tr>
     <tr><td>${L("Weekend")}</td><td>${esc(trUI(s.info.weekend_note || s.settings.weekend))}</td></tr>
     <tr><td>${L("Arabic words")}</td><td>${esc(trUI(s.settings.arabic_segmentation === false ? "prefixes left on" : "prefixes taken off before counting"))}</td></tr>

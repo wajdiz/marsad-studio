@@ -3,7 +3,7 @@ Third-party files in this folder
 transformers.min.js
   Transformers.js 4.3.2, Hugging Face. Apache License 2.0 (LICENSE-transformers.js.txt).
 
-ort-wasm-simd-threaded.asyncify.mjs, ort-wasm-simd-threaded.asyncify.wasm
+ort-wasm-simd-threaded.asyncify.mjs, ort-wasm-simd-threaded.asyncify.wasm (stored gzipped as ort-wasm-simd-threaded.asyncify.wasm.gz)
   ONNX Runtime Web 1.31.0-dev.20260914-8d85527a0, Microsoft Corporation. MIT License:
 
   Copyright (c) Microsoft Corporation

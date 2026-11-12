@@ -2,7 +2,7 @@
 
 # MARSAD Studio
 
-A social media and text analysis dashboard that runs entirely in your browser. Load a file and get 90
+A social media and text analysis dashboard that runs entirely in your browser. Load a file and get 101
 analyses over it. Nothing is installed, no account is needed, and the file never leaves your computer:
 the Python that does the work runs inside the page itself.
 
@@ -23,26 +23,53 @@ tells you which columns it matched to what.
 engagement columns, mixed time zones, reach reported where interactions are not: each one is stated above
 the results in plain words, with the number of rows it affects.
 
-**Runs 90 analyses**, in the sections the menu shows.
+**Runs 101 analyses**, in the sections the menu shows.
 
 | Section | Analyses |
 | --- | --- |
 | Society | 17 |
-| Words | 11 |
-| Spread and facts | 10 |
+| Words | 13 |
+| Spread and facts | 11 |
 | Ways of speaking | 10 |
 | Reactions | 10 |
+| Check my data | 8 |
 | When | 8 |
 | People | 8 |
-| Check my data | 7 |
-| Feelings and tone | 5 |
+| Feelings and tone | 8 |
+| Topics | 5 |
 | My report | 3 |
-| Topics | 1 |
 
-Every one of them runs here. Analyses that need a GPU language model, a Python package with no browser
-build, or an API are not in this version at all, rather than listed with a notice that they cannot run.
-What is left covers the same ground with word lists built for Arabic: sentiment, emotion, offensive
-language, propaganda-technique wording and the Society measures all work on your own file.
+Every one of them runs here. Analyses that need a GPU, a Python package with no browser build, or an API
+are not in this version at all, rather than listed with a notice that they cannot run. What is left
+covers the same ground in two ways:
+
+- **Word models and word lists built for Arabic**, which run on the file at once: sentiment, emotion,
+  offensive language, sarcasm, hate speech, dialect region, propaganda-technique wording and the Society
+  measures, and names mentioned together. They are small (TF-IDF and logistic regression, stored as JSON) and score 50,000 posts in a
+  few seconds. Each one's held-out scores are in its Help page and in the notes under its result.
+- **A language model the page runs itself**, for the analyses that need meaning rather than words:
+  *Posts about an idea*, *Posts like this one*, *How the meaning moves over time*, *Same message,
+  different words* and, once one of these has run, *Main topics*. The model reads the posts once; all five
+  use that one reading. Two more models work the same way: *Positive or negative?* (CAMeLBERT Mix sentiment)
+  and *Named entities (language model)* (CAMeLBERT Mix NER). The page asks first, downloads the model
+  once (about 135 MB: an Arabic model for Arabic files, a multilingual one otherwise), runs it in a
+  background thread of the browser, and keeps the result in the browser so the same file is not redone.
+  On a large file it reads a random sample of 5,000 posts unless you ask for all of them.
+
+| Analysis | How it works here | Held-out result |
+| --- | --- | --- |
+| Sarcasm (FRAME-21) | Word model, ArSarcasm-v2 | macro F1 0.64 (always "not sarcastic": 0.42) |
+| Hate speech (FRAME-22) | Word model, L-HSAB, T-HSAB and MLMA | macro F1 0.68; 0.56 to 0.62 on a dataset it did not see |
+| Dialect region (DATA-3) | Word model, ArSarcasm-v2 and QADI | macro F1 0.61 on the 31% of posts it is sure of; 0.41 on all |
+| Words used in the same way (TOPIC-2) | Word vectors learned from your file (PPMI and SVD) | no training data; nothing downloaded |
+| Posts about an idea (TOPIC-3) | ATM-V2 or multilingual MiniLM, in the browser | see the model cards on Hugging Face |
+| Posts like this one (TOPIC-4) | Same model; closest posts to one you pick | as above |
+| How the meaning moves over time (TOPIC-5) | Same model; average meaning per period | as above |
+| Same message, different words (SPREAD-14) | Same model; groups of posts with nearly the same meaning, at most 10,000 compared | as above |
+| Positive or negative? (FRAME-7) | CAMeLBERT Mix sentiment, in the browser, Arabic posts | macro F1 0.612 on the ArSarcasm-v2 test tweets (word model: 0.54); may include tweets from its training data |
+| Named entities (WORDS-13) | CAMeLBERT Mix NER, in the browser, Arabic posts; says which names the name list lacked | not measured; trained on MSA news |
+| Names mentioned together (WORDS-12) | Name list; a co-occurrence network, not relations | no model |
+| How the text is cleaned (DATA-8) | Each cleaning rule counted, and the spellings each counted word stands for | no model |
 
 **Handles a file too large for a browser.** Above 40 MB the file is not opened. It is read in slices
 instead, which costs no memory, and you are told how many rows it has and what columns it carries. From
@@ -92,8 +119,61 @@ three times that height with a transparent background. Nothing else needs editin
 
 ## Privacy
 
-The file you open is read inside the browser. No part of it is uploaded, and the page makes no request to
-any server other than the one serving these files. Closing the tab discards everything.
+The file you open is read inside the browser. No part of it is uploaded. The page makes no request to any
+server other than the one serving these files, except the visit counter when it is switched on (see Counting
+visits) and one more you are asked about first: the two
+analyses that use a language model (seven of them) download the model files from Hugging Face (or from the host set in
+`nlp/models.js`, which can be your own server). The model runs in your browser; your posts are not sent
+with that request or any other. Closing the tab discards your file. The model files and the results the
+model computed stay in the browser's storage so the next visit is quicker; clearing the site's data in the
+browser removes them.
+
+## Counting visits
+
+`analytics.js` counts visits with [GoatCounter](https://www.goatcounter.com) (free for non-commercial use) or
+Cloudflare Web Analytics, and is off until you put your site code in it. When it is on, it sends that the page was
+opened (the country comes from the network address; also the referring site, browser and screen size), which
+analyses are opened, and that a file was loaded with its rough size and source type. It never sends the file, its
+name, its posts or any result. Neither service sets cookies. Visitors whose browser asks not to be tracked are not
+counted, and the start page says that visits are counted.
+
+The numbers are close, not exact: browsers and extensions that block trackers also block these counters, and a
+"unique visitor" is one browser on one day, so a person who comes back the next day counts twice.
+
+## Language models in the browser
+
+The `nlp/` folder holds the runtime: Transformers.js 4.3.2 (`transformers.min.js`, Apache-2.0) and the
+WebAssembly build of ONNX Runtime it needs (`ort-wasm-simd-threaded.asyncify.mjs` and the engine itself, MIT,
+fetched only when a model is used). The engine is 27 MB, over GitHub's 25 MB upload limit, so it is stored gzipped as
+`ort-wasm-simd-threaded.asyncify.wasm.gz` (7 MB) and unpacked in the browser by `nlp/worker.js`. `nlp/models.js` lists the models and is the one file to edit:
+
+- `embeddings.ar`: [Arabic Triplet Matryoshka V2](https://huggingface.co/Omartificial-Intelligence-Space/Arabic-Triplet-Matryoshka-V2)
+  in the INT8 export [adelpro/atm-v2-web](https://huggingface.co/adelpro/atm-v2-web), Apache-2.0. Vectors
+  are cut to their first 256 dimensions, which Matryoshka training allows.
+- `embeddings.multi`: [paraphrase-multilingual-MiniLM-L12-v2](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2)
+  in the ONNX export [Xenova/paraphrase-multilingual-MiniLM-L12-v2](https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2).
+- `sentiment`: [CAMeLBERT Mix SA](https://huggingface.co/CAMeL-Lab/bert-base-arabic-camelbert-mix-sentiment)
+  in the INT8 export [wajdiz/camelbert-mix-sentiment-onnx](https://huggingface.co/wajdiz/camelbert-mix-sentiment-onnx),
+  Apache-2.0.
+- `ner`: [CAMeLBERT Mix NER](https://huggingface.co/CAMeL-Lab/bert-base-arabic-camelbert-mix-ner) in the INT8
+  export [wajdiz/camelbert-mix-ner-onnx](https://huggingface.co/wajdiz/camelbert-mix-ner-onnx), Apache-2.0.
+  Both were converted with `research_tools/convert_models_colab.ipynb`, which runs
+  `research_tools/convert_to_onnx.py`. Set either to `null` to hide its analysis.
+
+Speed depends on the computer. GitHub Pages cannot send the headers that let WebAssembly use more than one
+processor core, so the model runs on one core there; the progress bar shows the time left after the first
+batches.
+
+## Word models
+
+`research_tools/train_browser_models.py` trains the sarcasm, hate speech and dialect models from public
+data, writes them to `marsad_analytics/resources/models/`, and checks that the JSON model gives exactly the
+same labels as the scikit-learn one. It also takes MADAR Corpus-26 (`--madar`), which should improve the
+dialect model a good deal, and a hope speech file (`--hope`). The data: ArSarcasm-v2 (Abu Farha, Zaghouani
+and Magdy 2021, MIT), L-HSAB (Mulki et al. 2019), T-HSAB (Haddad, Mulki and Oueslati 2019), the Arabic part
+of MLMA (Ousidhoum et al. 2019, MIT) and the QADI test set (Abdelali et al. 2021). L-HSAB, T-HSAB and QADI
+are released for research with a request to cite them and state no licence; the model files hold learned
+word weights, not their posts.
 
 ## Licence and credit
 

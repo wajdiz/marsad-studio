@@ -5,7 +5,20 @@ import { pipeline, env } from "./transformers.min.js";
 const pipes = new Map();
 let cancelled = false;
 
-function setup(cfg) {
+// The ONNX Runtime engine is 27 MB, over GitHub's 25 MB upload limit, so it is stored gzipped (7 MB) and unpacked
+// here once per worker. Handing ONNX Runtime the bytes (wasmBinary) means it never asks for the unpacked file.
+let ortBinary = null;
+async function ortWasm() {
+  if (ortBinary) return ortBinary;
+  const url = new URL("./ort-wasm-simd-threaded.asyncify.wasm.gz", import.meta.url);
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("could not load the language-model engine (" + r.status + "): nlp/ort-wasm-simd-threaded.asyncify.wasm.gz");
+  if (typeof DecompressionStream === "undefined") throw new Error("this browser cannot unpack the language-model engine; use a recent Chrome, Edge, Firefox or Safari");
+  ortBinary = await new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
+  return ortBinary;
+}
+
+async function setup(cfg) {
   env.allowLocalModels = !!cfg.local;
   env.allowRemoteModels = !cfg.local;
   if (cfg.local) env.localModelPath = cfg.local;
@@ -13,6 +26,7 @@ function setup(cfg) {
   env.useBrowserCache = true;                       // model files are kept in the browser's Cache Storage
   const wasm = env.backends.onnx.wasm;
   wasm.wasmPaths = new URL("./", import.meta.url).href;   // the ONNX Runtime files served next to this file
+  if (!wasm.wasmBinary) wasm.wasmBinary = await ortWasm();
   if (self.crossOriginIsolated) wasm.numThreads = Math.min(8, self.navigator?.hardwareConcurrency || 4);
 }
 
@@ -121,7 +135,7 @@ self.onmessage = async e => {
   if (m.cmd === "cancel") { cancelled = true; return; }
   cancelled = false;
   try {
-    setup(m.cfg || {});
+    await setup(m.cfg || {});
     if (m.cmd === "embed") await embed(m);
     else if (m.cmd === "classify") await classify(m);
     else if (m.cmd === "ner") await ner(m);
