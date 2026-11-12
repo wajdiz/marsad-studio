@@ -394,6 +394,7 @@ details.box>.inner{padding:0 22px 20px}
 .pgrid label{font-size:14px;color:var(--k-blu-35-20);display:block;margin-bottom:4px;font-weight:700}
 .pgrid input[type=text],.pgrid input[type=number],.pgrid select,.pgrid textarea{width:100%;padding:8px 10px;border:1px solid var(--k-tea-75-20);border-radius:8px;background:var(--k-n-100);min-height:42px}
 .howbox p{font-size:15.5px;color:var(--k-blu-30-20)}
+.nlp-panel p{margin:8px 0 12px;color:var(--muted)}.nlp-opts{display:grid;gap:8px;margin:12px 0}.nlp-opts label{font-size:15px}
 .msg{padding:16px 18px;border-radius:12px;background:var(--amber-bg);border:1px solid var(--amber-line);font-size:16px;margin:12px 0;color:var(--k-amb-20-60)}
 .msg.grey{background:var(--k-blu-95-20);border-color:var(--k-blu-90-20);color:var(--k-blu-30-20)}.msg.err{background:var(--k-red-95-80);border-color:var(--k-red-85-60);color:var(--k-red-25-60)}
 .msg b{display:block;font-size:18px;margin-bottom:4px}
@@ -696,6 +697,8 @@ body.bigtext .explore-label{font-size:19px}
 <input type="file" id="projfile" accept=".json,.marsad.json" hidden>
 
 <script src="help.js"></script>
+<script src="nlp/models.js"></script>
+<script src="nlp/client.js"></script>
 <script>
 "use strict";
 // The page host serves a fixed set of file types, so archives and wheels are stored with an extra ".wasm" suffix.
@@ -874,6 +877,7 @@ async function boot() {
     py.FS.mkdirTree("/data");
     await py.runPythonAsync(`import sys, warnings\nwarnings.filterwarnings("ignore")\nsys.path.insert(0, "${SITE}")\nfrom marsad_analytics import webapp as W\nfrom marsad_analytics import chat as CH\nfrom marsad_analytics import validate as V\nfrom marsad_analytics import draft as DR`);
     W = py.globals.get("W"); CH = py.globals.get("CH"); VERSION = W.version(); V = py.globals.get("V"); DR = py.globals.get("DR");
+    W.set_browser_cards(py.toPy(NLP_CARDS));
     REG = dropGone(JSON.parse(W.registry_json())); PL = REG.plain;
     engine("Ready", "ready");
     if (LANG === "ar") setLang("ar");
@@ -911,7 +915,10 @@ const trUI = t => LANG === "ar" ? (PL?.ar?.ui?.[t] || t) : t;
 // Analyses this build cannot run, taken out where the page first reads the registry, so they are
 // absent from the menu, the counts, the Overview, the report and the help, rather than listed with a
 // notice that they need something this page has no way to reach.
-const GONE = ["FRAME-7", "FRAME-8", "FRAME-9", "FRAME-10", "FRAME-11", "FRAME-14", "FRAME-12", "FRAME-13", "SPREAD-7", "SPREAD-8", "SPREAD-9", "TOPIC-2", "TOPIC-3", "PLAN-offensive", "PLAN-hope", "PLAN-sarcasm"];
+// Analyses served by a language model the page runs itself (nlp/): they leave GONE when this browser can run it.
+const NLP_OK = !!(window.MarsadNLP && MarsadNLP.supported());
+const NLP_CARDS = NLP_OK ? ["TOPIC-3"].concat(window.MARSAD_MODELS?.sentiment ? ["FRAME-7"] : []) : [];
+const GONE = ["FRAME-7", "FRAME-8", "FRAME-9", "FRAME-10", "FRAME-11", "FRAME-14", "FRAME-12", "FRAME-13", "SPREAD-7", "SPREAD-8", "SPREAD-9", "TOPIC-3", "PLAN-offensive", "PLAN-hope"].filter(id => !NLP_CARDS.includes(id));
 function dropGone(reg) {
   reg.cards = (reg.cards || []).filter(c => !GONE.includes(c.id));
   const P = reg.plain;
@@ -2139,6 +2146,141 @@ function bindSearch() {
 }
 
 // ------------------------------------------------------------------ one analysis
+// ------------------------------------------------------------------ language models run in this page (nlp/)
+// Posts never leave the browser: the model is downloaded once (nlp/models.js says from where), runs in a Web Worker,
+// and its output is handed to the Python engine. Results are kept in IndexedDB so a file opened again is not redone.
+const NLP = {embeddingsByFile: {}};
+const tU = t => esc(trUI(t));
+const mb = b => (b / 1048576).toFixed(0);
+function nlpSpecKey(label) { const E = MARSAD_MODELS.embeddings; return Object.keys(E).find(k => E[k].label === label) || null; }
+function nlpEligible(arabicOnly, file) { return JSON.parse(W.browser_texts(arabicOnly, 1, file || null)).eligible; }
+function nlpProgressBox(title) {
+  return `<article class="panel nlp-panel"><h3 class="panel-title">${tU(title)}</h3>
+    <div class="bar-track" style="height:16px;margin:12px 0"><div class="bar-fill" id="nlpbar" style="width:0%"></div></div>
+    <p class="small-print" id="nlptxt">${tU("Starting")}</p>
+    <button class="btn small" id="nlpstop">${tU("Stop")}</button></article>`;
+}
+function nlpReporter(noun) {
+  const dl = {};
+  let t0 = null;
+  $("#nlpstop") && ($("#nlpstop").onclick = () => MarsadNLP.cancel());
+  return m => {
+    const bar = $("#nlpbar"), txt = $("#nlptxt"); if (!bar || !txt) return;
+    if (m.type === "download") {
+      dl[m.file] = [m.loaded, m.total];
+      const got = Object.values(dl).reduce((a, x) => a + x[0], 0), all = Object.values(dl).reduce((a, x) => a + x[1], 0);
+      if (all > 1048576) { bar.style.width = (got / all * 100).toFixed(1) + "%"; txt.textContent = `${trUI("Downloading the model (once; your browser keeps it)")}: ${mb(got)} / ${mb(all)} MB`; }
+    } else if (m.type === "progress") {
+      t0 = t0 || m.ms;
+      bar.style.width = (m.done / m.total * 100).toFixed(1) + "%";
+      const left = m.done > 0 ? (m.ms / m.done) * (m.total - m.done) / 1000 : 0;
+      const eta = m.done < Math.min(m.total, 48) ? "" : left > 90 ? ` · ${trUI("about")} ${Math.round(left / 60)} ${trUI("min left")}` : ` · ${trUI("about")} ${Math.max(1, Math.round(left))} ${trUI("s left")}`;
+      txt.textContent = `${fmt(m.done)} / ${fmt(m.total)} ${trUI(noun)}${eta}`;
+    }
+  };
+}
+function nlpChoice(html) {
+  return new Promise(resolve => {
+    const box = $("#cardbody"); if (!box) return resolve(null);
+    box.innerHTML = html;
+    $("#nlpgo").onclick = () => resolve({key: (box.querySelector("input[name=nlpmodel]:checked") || {}).value,
+                                         all: (box.querySelector("input[name=nlpn]:checked") || {}).value === "all"});
+  });
+}
+function nlpFail(e) {
+  const box = $("#cardbody"); if (!box) return false;
+  const stopped = /cancelled/.test(String(e && e.message));
+  box.innerHTML = `<div class="msg ${stopped ? "grey" : "err"}"><b>${tU(stopped ? "Stopped." : "The language model could not run in this browser.")}</b> ${stopped ? "" : esc(String(e && e.message || e))}</div>`;
+  console.error(e);
+  return false;
+}
+// Sentence embeddings for the posts: from memory, from this browser's store, or computed now after the reader agrees.
+async function nlpEmbeddings(file) {
+  if (JSON.parse(W.embedding_status(file || null))) return true;
+  const E = MARSAD_MODELS.embeddings, cap = MARSAD_MODELS.sample || 5000;
+  const first = nlpArabicFirst() ? "ar" : "multi";
+  const take = async (key, all) => {
+    const spec = E[key], t = JSON.parse(W.browser_texts(key === "ar", all ? 0 : cap, file || null));
+    const ck = ["emb", spec.id, spec.keep_dim || spec.dim, MarsadNLP.hash(t.texts)].join("|");
+    return {spec, t, ck, hit: await MarsadNLP.cacheGet(ck)};
+  };
+  const store = (x, data, dim) => W.set_embeddings(data, JSON.stringify(x.t.pos), dim, x.spec.label, x.t.eligible, file || null);
+  for (const all of [false, true]) {          // done before in this browser? then no question and no wait
+    const x = await take(first, all);
+    if (x.hit) { store(x, x.hit.data, x.hit.dim); return true; }
+    if (x.t.eligible <= cap) break;
+  }
+  const nAr = nlpEligible(true, file), nAll = nlpEligible(false, file);
+  const opt = (k, n) => `<label class="cb"><input type="radio" name="nlpmodel" value="${k}" ${k === first ? "checked" : ""}> <b>${esc(E[k].label)}</b>: ${esc(trUI(E[k].languages))}, ${E[k].mb} MB · ${fmt(n)} ${tU("posts")}</label>`;
+  const n0 = first === "ar" ? nAr : nAll;
+  const sizes = n0 > cap
+    ? `<label class="cb"><input type="radio" name="nlpn" value="sample" checked> ${tU("A random sample of")} ${fmt(cap)} ${tU("posts (a few minutes on a laptop)")}</label>
+       <label class="cb"><input type="radio" name="nlpn" value="all"> ${tU("All posts (can take much longer; the time left is shown as it runs)")}</label>` : "";
+  const c = await nlpChoice(`<article class="panel nlp-panel"><h3 class="panel-title">${tU("This analysis uses a language model that runs in your browser")}</h3>
+    <p>${tU("Your posts stay on this computer. The model is downloaded once and your browser keeps it for next time.")} ${tU("Each post is read up to its first 600 characters.")}</p>
+    <div class="nlp-opts">${opt("ar", nAr)}${opt("multi", nAll)}</div>${sizes ? `<div class="nlp-opts">${sizes}</div>` : ""}
+    <button class="btn primary" id="nlpgo">${tU("Download the model and run")}</button></article>`);
+  if (!c) return false;
+  let x;
+  try {
+    x = await take(c.key, c.all);
+    if (x.hit) { store(x, x.hit.data, x.hit.dim); return true; }
+    $("#cardbody").innerHTML = nlpProgressBox("Reading the posts with the language model");
+    const r = await MarsadNLP.run("embed", x.spec, x.t.texts, nlpReporter("posts"));
+    await MarsadNLP.cachePut(x.ck, {data: r.data, dim: r.dim, model: x.spec.id, n: x.t.pos.length, when: Date.now()});
+    store(x, r.data, r.dim);
+    return true;
+  } catch (e) { return nlpFail(e); }
+}
+function nlpArabicFirst() { const ar = (SCAN?.languages || []).find(l => l.code === "ar"); return !!ar && ar.share >= 0.6; }
+// TOPIC-3: the posts' embeddings, then the concepts embedded with the same model
+async function nlpConcepts(file) {
+  if (!(await nlpEmbeddings(file))) return false;
+  const st = JSON.parse(W.embedding_status(file || null)), key = nlpSpecKey(st.model), spec = MARSAD_MODELS.embeddings[key];
+  const seeds = JSON.parse(W.concept_seeds((params["TOPIC-3"] || {}).phrases || "", key === "ar"));
+  const names = Object.keys(seeds), flat = names.flatMap(n => seeds[n]);
+  try {
+    busy(true, trUI("Reading the concepts with the language model")); await tick();
+    const r = await MarsadNLP.run("embed", spec, flat);
+    const V = new Float32Array(names.length * r.dim);
+    let row = 0;
+    names.forEach((n, i) => {
+      for (let j = 0; j < seeds[n].length; j++, row++) for (let c = 0; c < r.dim; c++) V[i * r.dim + c] += r.data[row * r.dim + c];
+    });
+    W.set_concepts(V, JSON.stringify(names), r.dim, spec.label, file || null);
+    busy(false);
+    return true;
+  } catch (e) { busy(false); return nlpFail(e); }
+}
+// FRAME-7: sentiment labels from the configured classifier (nlp/models.js)
+async function nlpSentiment(file) {
+  if (JSON.parse(W.label_status("sentiment", file || null))) return true;
+  const spec = MARSAD_MODELS.sentiment, cap = MARSAD_MODELS.sample || 5000;
+  const arabicOnly = /^arabic$/i.test(spec.languages || "");
+  const n = nlpEligible(arabicOnly, file);
+  const c = await nlpChoice(`<article class="panel nlp-panel"><h3 class="panel-title">${tU("This analysis uses a language model that runs in your browser")}</h3>
+    <p>${tU("Your posts stay on this computer. The model is downloaded once and your browser keeps it for next time.")}</p>
+    <div class="nlp-opts"><label class="cb"><input type="radio" name="nlpmodel" value="s" checked> <b>${esc(spec.label || spec.id)}</b>: ${esc(trUI(spec.languages || ""))}, ${spec.mb || "?"} MB · ${fmt(n)} ${tU("posts")}</label></div>
+    ${n > cap ? `<div class="nlp-opts"><label class="cb"><input type="radio" name="nlpn" value="sample" checked> ${tU("A random sample of")} ${fmt(cap)} ${tU("posts (a few minutes on a laptop)")}</label><label class="cb"><input type="radio" name="nlpn" value="all"> ${tU("All posts (can take much longer; the time left is shown as it runs)")}</label></div>` : ""}
+    <button class="btn primary" id="nlpgo">${tU("Download the model and run")}</button></article>`);
+  if (!c) return false;
+  try {
+    const t = JSON.parse(W.browser_texts(arabicOnly, c.all ? 0 : cap, file || null));
+    const ck = ["clf", spec.id, MarsadNLP.hash(t.texts)].join("|");
+    let r = await MarsadNLP.cacheGet(ck);
+    if (!r) {
+      $("#cardbody").innerHTML = nlpProgressBox("Labelling the posts with the language model");
+      r = await MarsadNLP.run("classify", spec, t.texts, nlpReporter("posts"));
+      r = {labels: r.labels, scores: Array.from(r.scores)};
+      await MarsadNLP.cachePut(ck, r);
+    }
+    W.set_labels("sentiment", JSON.stringify(r.labels), JSON.stringify(Array.from(r.scores)), JSON.stringify(t.pos),
+                 spec.label || spec.id, t.eligible, file || null, spec.note || "");
+    REG = dropGone(JSON.parse(W.registry_json())); PL = REG.plain;
+    return true;
+  } catch (e) { return nlpFail(e); }
+}
+
 async function cardPage(id) {
   const it = plainOf(id), m = $("#main");
   if (!it) { m.innerHTML = head("Not found"); return; }
@@ -2154,6 +2296,10 @@ async function cardPage(id) {
   let r = results[id];
   const file = COMPARE() && !splitKey(id) ? (fileSel[id] || "") : "";
   if (r && (r.file || "") !== file) r = null;
+  if (!r && NLP_CARDS.includes(id)) {
+    const ok = id === "FRAME-7" ? await nlpSentiment(file) : await nlpConcepts(file);
+    if (!ok || view.page !== "card" || view.id !== id) return;
+  }
   if (!r) {
     if (id === "WORDS-3" && (!params[id] || (params[id].reference || "general") === "general")) await ensureWordfreq();
     busy(true, it.title + (file ? " · " + file : "")); await tick();
@@ -2161,6 +2307,10 @@ async function cardPage(id) {
   }
   if (view.page !== "card" || view.id !== id) return;
   $("#cardbody").innerHTML = resultHTML(id, r);
+  if (id === "TOPIC-1" && NLP_OK && r.status === "ok" && !JSON.parse(W.embedding_status(file || null))) {
+    $("#cardbody").insertAdjacentHTML("afterbegin", `<div class="msg grey">${esc(trUI("These topics come from shared words (LSA). A language model groups posts by meaning instead."))} <button class="btn small" id="nlptopics">${esc(trUI("Use the language model"))}</button></div>`);
+    $("#nlptopics").onclick = async () => { if (await nlpEmbeddings(file)) { results[id] = null; await cardPage(id); } };
+  }
   if (r.status === "ok") bindResult(id, r);
   else { const rr = $("#rerun"); if (rr) rr.onclick = async () => { params[id] = readParams(); results[id] = null; await cardPage(id); }; }
   if (COMPARE() && !splitKey(id) && $("#cmptable") && (regCard(id) || {}).cost !== "minutes") compareTable(id);
