@@ -697,6 +697,7 @@ body.bigtext .explore-label{font-size:19px}
 <input type="file" id="projfile" accept=".json,.marsad.json" hidden>
 
 <script src="help.js"></script>
+<script src="analytics.js"></script>
 <script src="nlp/models.js"></script>
 <script src="nlp/client.js"></script>
 <script>
@@ -997,6 +998,7 @@ window.addEventListener("scroll", hideTip, true);
 // ------------------------------------------------------------------ navigation
 function go(v) {
   if (v.page === "card" && GONE.includes(v.id)) v = {page: "overview"};
+  if (v.page === "card" && v.id && (view.page !== "card" || view.id !== v.id)) MarsadStats.event("analysis/" + v.id);
   view = v; hideTip(); if (v.page === "card" && v.id) noteRecent(v.id); try { localStorage.setItem("marsad_last", JSON.stringify(v)); } catch (e) {} render(); window.scrollTo({top: 0}); try { history.replaceState(null, "", "#" + (v.page === "card" ? "c-" + v.id : v.page === "section" ? "s-" + v.section : v.page === "study" ? "q-" + v.id : v.page === "help" ? MarsadHelp.hashFor(v.route || {view: "home"}) : v.page)); } catch (e) {} }
 const helpRoute = k => ({page: "help", route: MarsadHelp.routeFromHash(k)});
 function fromHash() {
@@ -1243,6 +1245,7 @@ function sourcesPanel(again) {
     </div>
     <div class="orgbar">
       <p class="orgbar-h">${esc(trUI("MARSAD Observatory, Northwestern University in Qatar"))}</p>
+      ${MarsadStats.on ? `<p class="small-print" style="text-align:center;margin:0 0 14px">${esc(trUI("Visits to this site are counted (country, referring site, browser), without cookies. Your files and posts are never sent."))}</p>` : ""}
       <ul class="orglogos">
         <li><img src="assets/logo-nuq.png" alt="Northwestern University in Qatar" loading="lazy"></li>
         <li><img src="assets/logo-qrdi.png" alt="Qatar Research, Development and Innovation Council" loading="lazy"></li>
@@ -2014,6 +2017,7 @@ async function loadData(settings) {
          arabic_segmentation: $("#arseg") ? $("#arseg").checked : ARSEG};
     SCAN = JSON.parse(W.load_files(py.toPy(paths), py.toPy(st), $("#platform")?.value || "auto", py.toPy(labels), files.length > 1 ? loadMode : "combine"));
     REG = dropGone(JSON.parse(W.registry_json())); PL = REG.plain; LEX = JSON.parse(W.lexicon_names());
+    MarsadStats.event(`file-loaded/${MarsadStats.sizeBand(SCAN.posts || 0)}/${SCAN.platform || "other"}`);
     for (const k of Object.keys(results)) delete results[k];
     for (const k of Object.keys(params)) delete params[k];
     saved.clear();
@@ -2225,6 +2229,7 @@ async function nlpEmbeddings(file) {
     <div class="nlp-opts">${opt("ar", nAr)}${opt("multi", nAll)}</div>${sizes ? `<div class="nlp-opts">${sizes}</div>` : ""}
     <button class="btn primary" id="nlpgo">${tU("Download the model and run")}</button></article>`);
   if (!c) return false;
+  MarsadStats.event(`model/${c.key}/${c.all ? "all" : "sample"}`);
   let x;
   try {
     x = await take(c.key, c.all);
