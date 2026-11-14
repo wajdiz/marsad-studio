@@ -736,7 +736,7 @@ label.pick input{margin:0}
 
 const SITE = "/home/pyodide/site";
 const PKGS = ["numpy", "pandas", "scipy", "scikit-learn", "regex", "msgpack", "tzdata", "packaging"];
-const BUILD = "2026-11-12 07:19 UTC";   // >>> BUILD STAMP <<< replaced by build_web_bundle.sh
+const BUILD = "2026-11-14 12:05 UTC";   // >>> BUILD STAMP <<< replaced by build_web_bundle.sh
 let VERSION = "", CH = null, V = null, DR = null, SAMPLE = null, py = null, W = null, REG = null, PL = null, SCAN = null, LEX = [], dl = null, wordfreq = false;
 const files = [], results = {}, params = {}, saved = new Set(), fileSel = {};
 let loadMode = "combine";
@@ -2539,6 +2539,11 @@ function resultHTML(id, r) {
 // chart, not three clicks away in Notes, because the number looks like a measurement either way.
 function exploratoryBanner(r) {
   const sm = r.summary || {};
+  // word models released as experimental (hate speech, sarcasm, dialect region) say so in the same place
+  if (sm.model_status === "experimental") {
+    const lead = (r.caveats || []).find(c => String(c).startsWith("EXPERIMENTAL")) || "";
+    return `<p class="explo" role="note"><strong>${esc(trUI("Experimental"))}</strong> ${esc(trUI(lead.replace(/^EXPERIMENTAL:\s*/, "")))}</p>`;
+  }
   if (sm.evidence_status !== "exploratory") return "";
   const lead = (r.caveats || []).find(c => String(c).startsWith("EXPLORATORY")) || "";
   const body = lead.replace(/^EXPLORATORY:\s*/, "");

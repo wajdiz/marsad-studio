@@ -58,9 +58,9 @@ covers the same ground in two ways:
 
 | Analysis | How it works here | Held-out result |
 | --- | --- | --- |
-| Sarcasm (FRAME-21) | Word model, ArSarcasm-v2 | macro F1 0.64 (always "not sarcastic": 0.42) |
-| Hate speech (FRAME-22) | Word model, L-HSAB, T-HSAB and MLMA | macro F1 0.68; 0.56 to 0.62 on a dataset it did not see |
-| Dialect region (DATA-3) | Word model, ArSarcasm-v2 and QADI | macro F1 0.61 on the 31% of posts it is sure of; 0.41 on all |
+| Sarcasm (FRAME-21) | Word model, ArSarcasm-v2 | macro F1 0.64 (always "not sarcastic": 0.42). Marked experimental |
+| Hate speech (FRAME-22) | Word model, L-HSAB, T-HSAB and MLMA | macro F1 0.68; 0.56 to 0.62 on a dataset it did not see. Marked experimental |
+| Dialect region (DATA-3) | Word model, ArSarcasm-v2 and QADI | macro F1 0.61 on the 31% of posts it is sure of; 0.41 on all. Marked experimental |
 | Words used in the same way (TOPIC-2) | Word vectors learned from your file (PPMI and SVD) | no training data; nothing downloaded |
 | Posts about an idea (TOPIC-3) | ATM-V2 or multilingual MiniLM, in the browser | see the model cards on Hugging Face |
 | Posts like this one (TOPIC-4) | Same model; closest posts to one you pick | as above |
@@ -174,6 +174,12 @@ and Magdy 2021, MIT), L-HSAB (Mulki et al. 2019), T-HSAB (Haddad, Mulki and Oues
 of MLMA (Ousidhoum et al. 2019, MIT) and the QADI test set (Abdelali et al. 2021). L-HSAB, T-HSAB and QADI
 are released for research with a request to cite them and state no licence; the model files hold learned
 word weights, not their posts.
+
+`research_tools/evaluate_word_models.py` runs the shipped sentiment, sarcasm, hate speech, dialect and emotion
+models on their held-out test sets, stops if it cannot reproduce the scores already stored in them, and writes a
+confusion matrix into each model file (plus the emotion model's per-label scores, which it lacked). The tables
+are in the Help page *Arabic word models and named entities*. The hate speech, sarcasm and dialect results carry
+an "Experimental" banner above the chart, in English and Arabic.
 
 ## Licence and credit
 

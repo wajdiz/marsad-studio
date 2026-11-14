@@ -2,7 +2,8 @@
 
 Each model is TF-IDF over MARSAD tokens (the same tokenize() the browser uses) followed by logistic regression, and is
 written as plain JSON to marsad_analytics/resources/models/<name>.json in the format wordmodels.py reads. Held-out
-scores are written into the same file ("evaluation") so the Help center and the cards can quote them.
+scores are written into the same file ("evaluation") so the Help center and the cards can quote them, with a confusion
+matrix on the same test set ("confusion").
 
 Data (all public; clone each repository into --data):
   sarcasm   ArSarcasm-v2 (Abu Farha, Zaghouani and Magdy 2021), MIT licence
@@ -32,7 +33,7 @@ import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import f1_score, precision_recall_fscore_support
+from sklearn.metrics import confusion_matrix, f1_score, precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 
 SEED = 7
@@ -329,6 +330,20 @@ def train_hope(T, path):
                                                             "evaluation": ev}), ev, (y, p, te)
 
 
+def confusion(js, y, p, test_set):
+    """Rows are the true label, columns the model's label (research_tools/evaluate_word_models.py writes the same)."""
+    if js["kind"] == "binary":
+        pos = js["classes"][0]
+        labels = ["not " + pos, pos]
+        y = np.where(np.asarray(y).astype(int) == 1, pos, "not " + pos)
+        p = np.where(np.asarray(p).astype(int) == 1, pos, "not " + pos)
+    else:
+        labels = js["classes"]
+    m = confusion_matrix(np.asarray(y).astype(str), np.asarray(p).astype(str), labels=labels)
+    return {"test_set": test_set, "rows": "true label", "columns": "label given by the model", "labels": labels,
+            "matrix": m.astype(int).tolist()}
+
+
 def check_parity(src, out_dir, name, texts, expected):
     """The JSON model, run through wordmodels.py exactly as the browser runs it, must give the sklearn predictions."""
     import importlib
@@ -369,6 +384,7 @@ def main():
         else:
             continue
         js["trained"] = str(date.today())
+        js["confusion"] = confusion(js, y, p, ev["test_set"])
         with open(os.path.join(a.out, f"{job}.json"), "w", encoding="utf-8") as f:
             json.dump(js, f, ensure_ascii=False, separators=(",", ":"))
         ev["json_matches_sklearn"] = check_parity(a.src, a.out, job, texts, np.asarray(p))
