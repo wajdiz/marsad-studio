@@ -671,7 +671,9 @@ body.bigtext .explore-label{font-size:19px}
 
 /* Abir's findings: one sticky toolbar (I-13), word list and language pickers (I-07, I-14), time settings (I-02, I-06) */
 .poststick{position:sticky;top:-1px;z-index:4;background:var(--white);border-bottom:1px solid var(--border);margin:0 0 6px}
-.poststick::before{content:"";position:absolute;inset-inline:-40px;bottom:100%;height:60px;background:var(--white)}
+/* Abir's findings I-24: this rule put a white block over the 60px above the sticky bar, which is where the title of the posts window sits.
+   A long title was cut off and a short one disappeared. The block is gone; the title wraps and, when very long, scrolls inside its own box. */
+.modal-head h2{overflow-wrap:anywhere;min-width:0;max-height:7.5em;overflow-y:auto}
 .poststick .postbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0 4px}
 .poststick .postpager{padding:4px 0 10px}
 fieldset.picker{border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin:0;min-width:0}
@@ -1148,13 +1150,13 @@ function bindProcessing() {
       if (on === ARSEG) return;
       ARSEG = on; try { localStorage.setItem("marsad_arseg", on ? "1" : "0"); } catch (e) {}
       settingsPage("processing");
-      if (SCAN && files.length) { closeModal(); await loadData(); }      // words are split when the file is read
+      if (SCAN && files.length) { closeModal(); await loadData(undefined, true); }      // words are split when the file is read
     }
     toast(trUI("Applied."));
   });
   const reloadTimes = async () => {
     try { localStorage.setItem("marsad_tzsrc", TZSRC); localStorage.setItem("marsad_tzout", TZOUT); localStorage.setItem("marsad_weekend", WEEKEND); } catch (e) {}
-    if (SCAN && files.length) { closeModal(); await loadData(); }      // times are converted when the file is read
+    if (SCAN && files.length) { closeModal(); await loadData(undefined, true); }      // times are converted when the file is read
     else settingsPage("processing");
     toast(trUI("Applied."));
   };
@@ -2103,11 +2105,16 @@ async function loadComparison() {
 }
 function alertMsg(m) { $("#main").insertAdjacentHTML("afterbegin", `<div class="msg err">${esc(m)}</div>`); }
 
-async function loadData(settings) {
+async function loadData(settings, stay) {
   if (!W || !files.length) return;
+  // Abir's findings I-23: changing a setting that re-reads the file (Arabic word splitting, times) used to end on Overview
+  // and drop every analysis's settings. With stay, the page that was open stays open, and each analysis keeps its settings,
+  // its file choice and its place in My report; only the results are worked out again. A new file still starts afresh.
+  const prevView = stay && view && view.page && view.page !== "overview" ? {...view} : null;
   busy(true, "Reading your file"); await tick();
   try {
-    try { py.FS.readdir("/data").filter(n => !n.startsWith(".")).forEach(n => py.FS.unlink("/data/" + n)); } catch (e) {}
+    // an uploaded credibility list stays when the same file is re-read, because the settings that point to it stay too
+    try { py.FS.readdir("/data").filter(n => !n.startsWith(".") && !(stay && n.startsWith("credibility_"))).forEach(n => py.FS.unlink("/data/" + n)); } catch (e) {}
     const paths = files.map((f, i) => { const p = "/data/" + i + "_" + f.name.replace(/[\\/]/g, "_"); py.FS.writeFile(p, f.data); return p; });
     const labels = files.map(f => (f.label || stem(f.name)).trim() || stem(f.name));
     const st = settings && settings.analysis_tz
@@ -2123,12 +2130,15 @@ async function loadData(settings) {
     REG = dropGone(JSON.parse(W.registry_json())); PL = REG.plain; LEX = JSON.parse(W.lexicon_names());
     MarsadStats.event(`file-loaded/${MarsadStats.sizeBand(SCAN.posts || 0)}/${SCAN.platform || "other"}`);
     for (const k of Object.keys(results)) delete results[k];
-    for (const k of Object.keys(params)) delete params[k];
-    saved.clear();
-    for (const k of Object.keys(fileSel)) delete fileSel[k];
+    if (!stay) {
+      for (const k of Object.keys(params)) delete params[k];
+      saved.clear();
+      for (const k of Object.keys(fileSel)) delete fileSel[k];
+    }
     busy(true, "Preparing your overview"); await tick();
-    for (const id of ["TIME-1", "TIME-2", "WORDS-1", "WHO-2", "DATA-4"]) if (regCard(id)?.available) runQuiet(id, COMPARE() && id === "TIME-1" ? (params[id] = {split: "dataset"}) : undefined);
-    busy(false); go({page: "overview"});
+    for (const id of ["TIME-1", "TIME-2", "WORDS-1", "WHO-2", "DATA-4"]) if (regCard(id)?.available)
+      runQuiet(id, params[id] || (COMPARE() && id === "TIME-1" ? (params[id] = {split: "dataset"}) : undefined));
+    busy(false); go(prevView || {page: "overview"});
   } catch (e) { busy(false); console.error(e); alertMsg("Could not read the file: " + pyErr(e)); }
 }
 function runQuiet(id, p, file) {
@@ -2480,7 +2490,7 @@ async function cardPage(id) {
     $("#nlptopics").onclick = async () => { if (await nlpEmbeddings(file)) { results[id] = null; await cardPage(id); } };
   }
   if (r.status === "ok") bindResult(id, r);
-  else { bindPickers(); const rr = $("#rerun"); if (rr) rr.onclick = async () => { const p = readParams(); if (!pickOk(p)) return; params[id] = p; results[id] = null; await cardPage(id); }; }
+  else { bindPickers(); bindDrawer(id); const rr = $("#rerun"); if (rr) rr.onclick = async () => { const p = readParams(); if (!pickOk(p)) return; params[id] = p; results[id] = null; await cardPage(id); }; }
   if (COMPARE() && !splitKey(id) && $("#cmptable") && (regCard(id) || {}).cost !== "minutes") compareTable(id);
   else if ($("#cmptable")) $("#cmptable").innerHTML = `<button class="btn small" id="cmpgo">Show key numbers for each file</button>`, $("#cmpgo").onclick = () => compareTable(id);
 }
@@ -2500,7 +2510,7 @@ function pager(id) {
 }
 const NEEDS_INPUT = ["WORDS-4", "WORDS-5", "WORDS-6", "WORDS-7", "FRAME-6", "TIME-4", "FRAME-8", "TOPIC-3", "TOPIC-4"];
 function resultHTML(id, r) {
-  if (r.status !== "ok") return `<div class="msg ${r.status === "error" ? "err" : "grey"}"><b>${r.status === "error" ? "Something went wrong" : "No result for this file"}</b>${esc((regCard(id) || {}).runtime_gap ? plainGap(regCard(id)) : r.message)}</div>` + optionsBox(id, true);
+  if (r.status !== "ok") return `<div class="msg ${r.status === "error" ? "err" : "grey"}"><b>${r.status === "error" ? "Something went wrong" : "No result for this file"}</b>${esc((regCard(id) || {}).runtime_gap ? plainGap(regCard(id)) : r.message)}${optionsBox(id, false) ? `<p style="margin:12px 0 0"><button type="button" class="btn" id="optreopen"><span class="sliders" aria-hidden="true">&#9881;</span> ${esc(trUI("Change the settings of this analysis"))}</button></p>` : ""}</div>` + optionsBox(id, true);
   const ex = r.explain || {};
   const G = glossCatalog();
   const chips = Object.entries(r.summary || {}).filter(([k, v]) => v !== null && v !== "" && typeof v !== "object" && !(PL.hide_summary || []).includes(k) && !(typeof v === "string" && v.length > 24)).slice(0, 6)
@@ -2542,7 +2552,7 @@ function methodBlock(id, r) {
   const c = regCard(id) || {};
   const used = Object.entries((r.params && Object.keys(r.params).length ? r.params : (c.params || {})) || {})
     .filter(([k, v]) => v !== null && v !== "" && !["run_if_missing", "rerun", "examples", "path", "predictor"].includes(k))
-    .map(([k, v]) => `${esc((LANG === "ar" && PL.ar?.params?.[k]) || PL.params[k] || human(k))}: <b>${esc(String(Array.isArray(v) ? v.join(", ") : v)).slice(0, 80)}</b>`);
+    .map(([k, v]) => `${esc(plabel(id, k))}: <b>${esc(String(Array.isArray(v) ? v.join(", ") : v)).slice(0, 80)}</b>`);
   const nums = Object.entries(sm).filter(([k, v]) => typeof v === "number")
     .slice(0, 8).map(([k, v]) => `${esc(trUI(human(k)))}: <b>${fmt(v)}</b>`);
   // I-16: a setting that changes the method replaces the method text; others add one sentence
@@ -2577,9 +2587,18 @@ function basisLine(b) {
   return `<p class="basis">Based on <b>${fmt(b.used)}</b> of ${fmt(b.total)} posts${what}${filtersOn() ? " · filters on" : ""}.</p>`;
 }
 // one line under each field, so the setting is not just a label
-function helpFor(k) {
+function helpFor(k, id) {
+  // Abir's findings I-17: a card's own help line first (the same option name can mean different things on different analyses)
+  const own = id && ((LANG === "ar" && PL.ar?.card_param_help?.[id]?.[k]) || PL.card_param_help?.[id]?.[k]);
+  if (own) return own;
   const ar = LANG === "ar" && PL.ar && PL.ar.param_help && PL.ar.param_help[k];
   return ar || trUI((PL.param_help || {})[k] || "");
+}
+// Abir's findings I-17: the label of an option. A card's own wording wins over the shared one, so "threshold" reads as a
+// toxicity score only on the toxicity analysis and as a copy-similarity on the copy-detection analyses.
+function plabel(id, k) {
+  return (LANG === "ar" && PL.ar?.card_params?.[id]?.[k]) || PL.card_params?.[id]?.[k]
+      || (LANG === "ar" && PL.ar?.params?.[k]) || PL.params[k] || human(k);
 }
 function pickOk(p) {
   const need = document.querySelector("#optbox fieldset.picker[data-need]");
@@ -2591,16 +2610,27 @@ function closeDrawer() {
   if (o && !o.hidden) { o.hidden = true; document.body.classList.remove("draweropen"); const b = document.getElementById("optbtn"); if (b) b.focus(); }
 }
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+// Abir's findings I-19, I-21, I-23: the sidebar closes whether or not its fields are filled in. A click outside it closes it
+// too (also on a page with no result, where there is no Adjust analysis button), and closing only hides the sidebar:
+// it never changes the page.
 document.addEventListener("mousedown", e => {
   const o = document.getElementById("optbox"), b = document.getElementById("optbtn");
-  if (o && !o.hidden && !o.contains(e.target) && b && !b.contains(e.target)) closeDrawer();
+  if (o && !o.hidden && !o.contains(e.target) && !(b && b.contains(e.target)) && !e.target.closest("#modal, .modal-scrim")) closeDrawer();
 });
+// Opens the sidebar again on a page that shows no result, where it starts open and there is no Adjust analysis button.
+function bindDrawer(id) {
+  const oc = document.getElementById("optclose"); if (oc) oc.onclick = e => { e.preventDefault(); e.stopPropagation(); closeDrawer(); };
+  const orst = document.getElementById("optreset");
+  if (orst) orst.onclick = async () => { delete params[id]; closeDrawer(); results[id] = null; await cardPage(id); };
+  const re = document.getElementById("optreopen");
+  if (re) re.onclick = () => { const o = document.getElementById("optbox"); if (o) { o.hidden = false; document.body.classList.add("draweropen"); const f = o.querySelector("select,input,button"); if (f) f.focus(); } };
+}
 function optionsBox(id, open) {
   const c = regCard(id); if (!c) return "";
   const p = c.params || {}, ch = c.param_choices || {}, cur = params[id] || (results[id] && results[id].params) || {};
   const keys = Object.keys(p).filter(k => !["run_if_missing", "rerun", "examples", "path", "predictor"].includes(k));
   if (!keys.length) return "";
-  const lab = k => esc((LANG === "ar" && PL.ar?.params?.[k]) || PL.params[k] || human(k));
+  const lab = k => esc(plabel(id, k));
   const f = k => {
     const sm = (results[id] && results[id].summary) || {};
     const v = (k in cur && cur[k] !== null && cur[k] !== "") ? cur[k] : (sm[k] !== undefined && typeof sm[k] !== "object" ? sm[k] : p[k]), fid = `p-${k}`;
@@ -2624,14 +2654,50 @@ function optionsBox(id, open) {
     if (typeof v === "number") return `<label for="${fid}">${lab(k)}</label><input type="number" step="any" id="${fid}" data-k="${k}" data-t="num" value="${v}">`;
     if (k === "events") return `<label for="${fid}">${lab(k)}</label><textarea id="${fid}" data-k="${k}" data-t="events" rows="2" placeholder="Election, 2026-11-03"></textarea>`;
     if (Array.isArray(v) || ["terms", "words", "query_terms"].includes(k)) return `<label for="${fid}">${lab(k)}</label><input type="text" id="${fid}" data-k="${k}" data-t="list" value="${esc((v || []).join ? (v || []).join(", ") : (v || ""))}">`;
+    if (k === "credibility_file") return credField(fid, k, lab(k), v);
     return `<label for="${fid}">${lab(k)}</label><input type="text" id="${fid}" data-k="${k}" data-t="str" value="${esc(v ?? "")}">`;
   };
   return `<div class="drawer" id="optbox" ${open ? "" : "hidden"} role="dialog" aria-modal="false" aria-label="${esc(trUI("Settings for this analysis"))}">
-    <div class="drawer-head"><b>${esc(trUI("Settings for this analysis"))}</b><button class="iconbtn" id="optclose" aria-label="${esc(trUI("Close"))}">&#10005;</button></div>
-    <div class="drawer-body"><div class="pgrid">${keys.map(k => `<div>${f(k)}${helpFor(k) ? `<p class="fieldhelp">${esc(helpFor(k))}</p>` : ""}</div>`).join("")}</div></div>
+    <div class="drawer-head"><b>${esc(trUI("Settings for this analysis"))}</b><button type="button" class="iconbtn" id="optclose" aria-label="${esc(trUI("Close"))}">&#10005;</button></div>
+    <div class="drawer-body"><div class="pgrid">${keys.map(k => `<div>${f(k)}${helpFor(k, id) ? `<p class="fieldhelp">${esc(helpFor(k, id))}</p>` : ""}</div>`).join("")}</div></div>
     <div class="drawer-foot"><button class="btn" id="optreset">${esc(trUI("Reset to defaults"))}</button><button class="btn primary" id="rerun">${esc(trUI("Apply"))}</button></div>
   </div>`;
 }
+// Abir's findings I-20: the credibility list is a CSV file that is uploaded here (two columns, domain and rating).
+// A Google Drive link cannot be read by this page, so the field says so and says how to get the file out of Drive.
+function credField(fid, k, label, v) {
+  const name = v ? String(v).split("/").pop().replace(/^credibility_/, "") : "";
+  return `<label for="${fid}-file">${label}</label>
+    <input type="hidden" id="${fid}" data-k="${k}" data-t="str" value="${esc(v ?? "")}">
+    <input type="file" id="${fid}-file" class="credfile" accept=".csv,.tsv,.txt,text/csv" data-for="${fid}">
+    <p class="fieldhelp credstate" id="${fid}-state" aria-live="polite">${name ? esc(trUI("Using the file")) + ": <b>" + esc(name) + "</b> " + `<button type="button" class="linkbtn" data-credclear="${fid}">${esc(trUI("Remove"))}</button>` : esc(trUI("No file chosen. The analysis runs without credibility ratings."))}</p>
+    <details class="fieldhelp"><summary>${esc(trUI("What the file should look like"))}</summary>
+      <p>${esc(trUI("A CSV file with a header row and two columns: domain and rating."))}</p>
+      <pre style="margin:4px 0;white-space:pre-wrap">domain,rating\nbbc.com,high\nexample-news.net,low</pre>
+      <p>${esc(trUI("Use Choose file to upload it from your computer. A Google Drive link does not work here: in Drive choose File, Download, then upload the downloaded file."))}</p></details>`;
+}
+document.addEventListener("change", async e => {
+  const inp = e.target.closest && e.target.closest("input.credfile"); if (!inp) return;
+  const fid = inp.dataset.for, hid = document.getElementById(fid), st = document.getElementById(fid + "-state"), f = inp.files && inp.files[0];
+  if (!f) return;
+  try {
+    const bytes = new Uint8Array(await f.arrayBuffer()), text = new TextDecoder("utf-8").decode(bytes);
+    const head = (text.split(/\r?\n/)[0] || "").toLowerCase().split(/[,;\t]/).map(x => x.replace(/["'\ufeff\s]/g, ""));
+    if (!["domain", "site", "website", "url", "source"].some(x => head.includes(x)) || !["rating", "credibility", "label", "score", "category"].some(x => head.includes(x))) {
+      inp.value = ""; if (st) st.innerHTML = `<span style="color:#a3281f">${esc(trUI("This file does not have the two columns domain and rating in its first row. Nothing was uploaded."))}</span>`; return;
+    }
+    const path = "/data/credibility_" + f.name.replace(/[\\/]/g, "_");
+    py.FS.writeFile(path, bytes);
+    hid.value = path;
+    const n = Math.max(0, text.split(/\r?\n/).filter(l => l.trim()).length - 1);
+    if (st) st.innerHTML = `${esc(trUI("Using the file"))}: <b>${esc(f.name)}</b> (${n.toLocaleString()} ${esc(trUI("rows"))}). ${esc(trUI("Press Apply to use it."))}`;
+  } catch (err) { inp.value = ""; if (st) st.textContent = trUI("This file could not be read."); }
+});
+document.addEventListener("click", e => {
+  const b = e.target.closest && e.target.closest("[data-credclear]"); if (!b) return;
+  const fid = b.dataset.credclear, hid = document.getElementById(fid), st = document.getElementById(fid + "-state"), fi = document.getElementById(fid + "-file");
+  if (hid) hid.value = ""; if (fi) fi.value = ""; if (st) st.textContent = trUI("No file chosen. The analysis runs without credibility ratings.");
+});
 function checkPicker(fid, k, label, items, chosen, needOne) {
   const on = new Set(chosen.map(String));
   const sorted = [...items.filter(([v]) => on.has(String(v))), ...items.filter(([v]) => !on.has(String(v)))];
@@ -2798,9 +2864,7 @@ function bindResult(id, r) {
     document.body.classList.toggle("draweropen", !o.hidden);
     if (!o.hidden) { const f = o.querySelector("select,input,button"); if (f) f.focus(); }
   };
-  const oc = $("#optclose"); if (oc) oc.onclick = closeDrawer;
-  const orst = $("#optreset");
-  if (orst) orst.onclick = async () => { delete params[id]; closeDrawer(); results[id] = null; await cardPage(id); };
+  bindDrawer(id);
   const nb = $("#notesbtn"); if (nb) nb.onclick = () => modal("Notes about this result", `<ul class="notes">${(r.caveats || []).filter(Boolean).map(n => `<li>${esc(n)}</li>`).join("")}</ul>`);
   const cb = document.querySelector('[data-more="check"]'); if (cb) cb.onclick = () => checkStart(id, r);
   document.querySelectorAll("[data-pct]").forEach(b => b.onclick = () => {
@@ -2992,6 +3056,8 @@ function moreAction(what, id, r, figs) {
     copyText(keyNumbersText(id, r), "Key numbers");
   } else if (what === "problem") {
     reportProblem(id, r);
+  } else if (what === "check") {
+    checkStart(id, r);      // Abir's findings I-22: the menu item was shown, but this handler had no case for it
   }
 }
 async function copyChartImage() {
