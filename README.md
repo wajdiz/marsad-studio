@@ -2,7 +2,7 @@
 
 # MARSAD Studio
 
-A social media and text analysis dashboard that runs entirely in your browser. Load a file and get 101
+A social media and text analysis dashboard that runs entirely in your browser. Load a file and get 102
 analyses over it. Nothing is installed, no account is needed, and the file never leaves your computer:
 the Python that does the work runs inside the page itself.
 
@@ -14,7 +14,7 @@ a tool like Zeeschuimer, and this page reads what those produce.
 
 ## What it does
 
-**Reads the files researchers already have.** CSV, Excel, JSON or NDJSON. Exports from CrowdTangle, Meta
+**Reads the files researchers already have.** CSV, Excel, JSON or NDJSON, also inside a ZIP or GZ file. Exports from CrowdTangle, Meta
 Content Library, Meltwater, Communalytic, Zeeschuimer and the common API dumps are recognised and mapped
 automatically, so no column has to be renamed. A file it does not recognise is read generically, and it
 tells you which columns it matched to what.
@@ -23,7 +23,7 @@ tells you which columns it matched to what.
 engagement columns, mixed time zones, reach reported where interactions are not: each one is stated above
 the results in plain words, with the number of rows it affects.
 
-**Runs 101 analyses**, in the sections the menu shows.
+**Runs 102 analyses**, in the sections the menu shows.
 
 | Section | Analyses |
 | --- | --- |
@@ -35,7 +35,7 @@ the results in plain words, with the number of rows it affects.
 | Check my data | 8 |
 | When | 8 |
 | People | 8 |
-| Feelings and tone | 8 |
+| Feelings and tone | 9 |
 | Topics | 5 |
 | My report | 3 |
 
@@ -50,7 +50,8 @@ covers the same ground in two ways:
 - **A language model the page runs itself**, for the analyses that need meaning rather than words:
   *Posts about an idea*, *Posts like this one*, *How the meaning moves over time*, *Same message,
   different words* and, once one of these has run, *Main topics*. The model reads the posts once; all five
-  use that one reading. Two more models work the same way: *Positive or negative?* (CAMeLBERT Mix sentiment)
+  use that one reading. Three more analyses work the same way: *Positive or negative?* (CAMeLBERT Mix
+  sentiment for Arabic posts, XLM-T sentiment for the rest), *Toxic language* (toxic-bert, English posts)
   and *Named entities (language model)* (CAMeLBERT Mix NER). The page asks first, downloads the model
   once (about 135 MB: an Arabic model for Arabic files, a multilingual one otherwise), runs it in a
   background thread of the browser, and keeps the result in the browser so the same file is not redone.
@@ -67,6 +68,8 @@ covers the same ground in two ways:
 | How the meaning moves over time (TOPIC-5) | Same model; average meaning per period | as above |
 | Same message, different words (SPREAD-14) | Same model; groups of posts with nearly the same meaning, at most 10,000 compared | as above |
 | Positive or negative? (FRAME-7) | CAMeLBERT Mix sentiment, in the browser, Arabic posts | macro F1 0.612 on the ArSarcasm-v2 test tweets (word model: 0.54); may include tweets from its training data |
+| Positive or negative? (FRAME-7), other languages | XLM-T sentiment, in the browser, posts not in Arabic script | not measured here; its model page reports no scores |
+| Toxic language (FRAME-9) | toxic-bert (Detoxify original), in the browser, English posts: six scores | not measured here; trained on Wikipedia talk-page comments |
 | Named entities (WORDS-13) | CAMeLBERT Mix NER, in the browser, Arabic posts; says which names the name list lacked | not measured; trained on MSA news |
 | Names mentioned together (WORDS-12) | Name list; a co-occurrence network, not relations | no model |
 | How the text is cleaned (DATA-8) | Each cleaning rule counted, and the spellings each counted word stands for | no model |
@@ -155,10 +158,22 @@ fetched only when a model is used). The engine is 27 MB, over GitHub's 25 MB upl
 - `sentiment`: [CAMeLBERT Mix SA](https://huggingface.co/CAMeL-Lab/bert-base-arabic-camelbert-mix-sentiment)
   in the INT8 export [wajdiz/camelbert-mix-sentiment-onnx](https://huggingface.co/wajdiz/camelbert-mix-sentiment-onnx),
   Apache-2.0.
+- `sentiment_multi`: [XLM-T sentiment](https://huggingface.co/cardiffnlp/twitter-xlm-roberta-base-sentiment)
+  (Barbieri, Espinosa Anke and Camacho-Collados 2022; fine-tuned on tweets in Arabic, English, French, German,
+  Hindi, Italian, Portuguese and Spanish) in the INT8 export
+  [onnx-community/twitter-xlm-roberta-base-sentiment-ONNX](https://huggingface.co/onnx-community/twitter-xlm-roberta-base-sentiment-ONNX),
+  about 280 MB, for posts not written in Arabic script. Its model page states no licence; check it before
+  any use beyond research.
+- `toxicity`: [toxic-bert](https://huggingface.co/unitary/toxic-bert) (Detoxify's original model, Apache-2.0)
+  in the INT8 export [Xenova/toxic-bert](https://huggingface.co/Xenova/toxic-bert), about 110 MB, English posts:
+  toxicity, severe toxicity, obscene, threat, insult and identity attack. Detoxify's multilingual model has
+  no browser export yet; Arabic posts are covered by the offensive-language and hate speech word models. The
+  network analyzer's toxicity filter uses these scores, or the offensive-language word model for Arabic
+  posts when Toxicity has not been run.
 - `ner`: [CAMeLBERT Mix NER](https://huggingface.co/CAMeL-Lab/bert-base-arabic-camelbert-mix-ner) in the INT8
   export [wajdiz/camelbert-mix-ner-onnx](https://huggingface.co/wajdiz/camelbert-mix-ner-onnx), Apache-2.0.
-  Both were converted with `research_tools/convert_models_colab.ipynb`, which runs
-  `research_tools/convert_to_onnx.py`. Set either to `null` to hide its analysis.
+  The two CAMeLBERT models were converted with `research_tools/convert_models_colab.ipynb`, which runs
+  `research_tools/convert_to_onnx.py`. Set any of these to `null` to hide its analysis.
 
 Speed depends on the computer. GitHub Pages cannot send the headers that let WebAssembly use more than one
 processor core, so the model runs on one core there; the progress bar shows the time left after the first

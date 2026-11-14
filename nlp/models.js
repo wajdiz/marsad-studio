@@ -8,6 +8,12 @@
 // sentiment   a text-classification model for Sentiment (FRAME-7). Set to null, that analysis is hidden. Any model
 //             in the Transformers.js layout works (research_tools/convert_to_onnx.py converts a Hugging Face one).
 //             labels maps the model's own label names to negative, neutral and positive.
+// sentiment_multi  a text-classification model for the posts NOT in Arabic script in Sentiment (FRAME-7); Arabic
+//             posts keep "sentiment". Set to null and only Arabic posts are labelled.
+// toxicity    a multi-label text-classification model for Toxicity (FRAME-9): one score per attribute. "scope" says
+//             which posts it reads ("english" = posts detected as English). Set to null, that analysis is hidden.
+// preprocess  "twitter" replaces @names with @user and links with http before the model reads a post, as the
+//             Cardiff Twitter models expect.
 // ner         a token-classification model for Named entities (WORDS-13), BIO labels. Set to null, it is hidden.
 //             types maps the model's entity types to the names shown.
 window.MARSAD_MODELS = Object.assign({
@@ -31,6 +37,24 @@ window.MARSAD_MODELS = Object.assign({
         + "browser as an 8-bit ONNX export. Macro F1 0.612 on the 3,000 ArSarcasm-v2 test tweets (the quick word model: "
         + "0.54); ArSarcasm-v2 reuses tweets from ASTD and SemEval-2017, so some test tweets may have been in its training "
         + "data and the figure on new posts can be lower. Arabic posts only; the first 600 characters of each.",
+  },
+  sentiment_multi: {
+    id: "onnx-community/twitter-xlm-roberta-base-sentiment-ONNX", dtype: "q8", mb: 279, label: "XLM-T sentiment",
+    languages: "Arabic, English, French, German, Hindi, Italian, Portuguese and Spanish (other languages less reliably)",
+    labels: {}, licence: "not stated on the model page", preprocess: "twitter",
+    note: "XLM-T sentiment (Barbieri, Espinosa Anke and Camacho-Collados 2022; cardiffnlp/twitter-xlm-roberta-base-sentiment), "
+        + "XLM-RoBERTa trained further on about 198 million tweets and fine-tuned for sentiment on tweets in eight languages, "
+        + "run in the browser as an 8-bit ONNX export (onnx-community). Used for posts not written in Arabic script. Not "
+        + "tested here, and its model page reports no scores; posts in languages outside its eight may be labelled less well.",
+  },
+  toxicity: {
+    id: "Xenova/toxic-bert", dtype: "q8", mb: 111, label: "toxic-bert (Detoxify original)", scope: "english",
+    languages: "English", licence: "Apache-2.0",
+    note: "toxic-bert (unitary/toxic-bert, Detoxify's original model; Hanu and Unitary 2020), BERT trained on the Wikipedia "
+        + "talk-page comments of the 2018 Jigsaw Toxic Comment Classification Challenge, run in the browser as an 8-bit ONNX "
+        + "export (Xenova). Six scores per post: toxicity, severe toxicity, obscene, threat, insult and identity attack. "
+        + "English posts only. Its authors note that swearing or insult words are likely to be scored toxic whatever the "
+        + "tone, including jokes; it was trained on Wikipedia comments, not social media posts.",
   },
   ner: {
     id: "wajdiz/camelbert-mix-ner-onnx", dtype: "q8", mb: 110, label: "CAMeLBERT Mix NER", languages: "Arabic",
