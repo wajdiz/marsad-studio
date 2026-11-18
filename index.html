@@ -719,6 +719,7 @@ label.pick input{margin:0}
 <input type="file" id="projfile" accept=".json,.marsad.json" hidden>
 
 <script src="help.js"></script>
+<script src="map3d.js?v=1"></script>
 <script src="analytics.js"></script>
 <script src="nlp/models.js"></script>
 <script src="nlp/client.js"></script>
@@ -2846,6 +2847,13 @@ function orderFig(f) {
 }
 function plot(el, fig, opt = {}) {
   fig = orderFig(fig);
+  el.__fig = fig;
+  // 3D maps of posts get the canvas view (turn, zoom, topic list, no overlapping names); exports still draw the Plotly chart
+  if (!opt.forLight && !opt.compact && window.MarsadMap3D && MarsadMap3D.is(fig)) {
+    if (el._fullLayout && window.Plotly) Plotly.purge(el);
+    return MarsadMap3D.render(el, fig, {lang: LANG, tr: trUI, dark: isDark(), onPosts: (c, name) => showPosts(c, String(name || ""))});
+  }
+  if (el.dataset.m3) { el.innerHTML = ""; delete el.dataset.m3; el.__m3 = null; }
   const dk = isDark() && !opt.forLight;
   const ink = dk ? "#e4ecf1" : "#243543", grid = dk ? "#32434f" : "#e4eaee";
   const layout = Object.assign({}, fig.layout, {autosize: true,
