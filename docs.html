@@ -79,9 +79,18 @@ body.bigtext{font-size:18.5px}body.bigtext .page-title{font-size:34px}body.bigte
 .hc-faq a{color:#0b6a70;font-weight:700}
 .hc-foot{color:#4f6371;font-size:13px;margin-top:28px}
 body.bigtext .hc-body{font-size:19px}body.bigtext .hc-link,body.bigtext .hc-rs{font-size:17px}body.bigtext .hc-rt{font-size:19px}
+
+/* header like the other MARSAD pages: light bar, navy logo, مرصد, then the page name */
+@font-face{font-family:"MARSAD Kufi";src:url(assets/fonts/marsad-ar-900.woff2) format("woff2");font-weight:900;font-display:swap;unicode-range:U+0600-06FF}
+.appbar{background:#e4edf3;color:#14304a;border-bottom:1px solid #c9d7e1;min-height:72px}
+.brand{color:#081843;gap:12px;font-size:18.5px}.brand img{height:30px;width:auto;display:block}
+.brand .mk-ar{font-family:"MARSAD Kufi",Tahoma,sans-serif;font-weight:900;color:#081843;font-size:25px;line-height:1.2;border-inline-start:1px solid rgba(20,48,74,.25);padding-inline-start:12px}
+.brand span.t{border-inline-start:1px solid rgba(20,48,74,.25);padding-inline-start:12px;line-height:1.2;color:#081843;font-size:22px;font-weight:800;font-family:"Helvetica Neue",Arial,sans-serif}
+.topbtn{border-color:rgba(20,48,74,.4);color:#14304a}.topbtn[aria-pressed=true]{background:#14304a;color:#fff}.topbtn.app{background:#e8a93c;border-color:#e8a93c;color:#1d1404}
+@media(max-width:700px){.brand .mk-ar,.brand span.t{display:none}.brand img{height:24px}}
 </style></head>
 <body>
-<header class="appbar"><button class="brand" id="home"><span class="brand-mark" aria-hidden="true"></span><span class="t">MARSAD Help center</span></button>
+<header class="appbar"><button class="brand" id="home" aria-label="MARSAD Studio Help centre home"><img src="assets/marsad-wordmark.svg?v=5" alt="MARSAD" width="157" height="30"><span class="mk-ar" lang="ar" aria-hidden="true">مرصد</span><span class="t">Help centre</span></button>
 <div class="top-right"><button class="topbtn" id="sizebtn" aria-pressed="false">A+ Larger text</button><a class="topbtn app" id="applink" href="index.html">Open the dashboard</a></div></header>
 <main class="content" id="main" tabindex="-1"></main>
 <script>/* MARSAD Help center: renders docs.json. Used by the dashboard (index.html) and the standalone docs page (docs.html).
