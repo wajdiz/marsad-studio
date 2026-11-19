@@ -33,9 +33,9 @@ window.MARSAD_MODELS = Object.assign({
   sentiment: {
     id: "wajdiz/camelbert-mix-sentiment-onnx", dtype: "q8", mb: 110, label: "CAMeLBERT Mix sentiment", languages: "Arabic",
     labels: {}, licence: "Apache-2.0",
-    note: "CAMeLBERT Mix SA (Inoue et al. 2021), fine-tuned on ASTD, ArSAS and SemEval-2017 Arabic tweets, run in the "
-        + "browser as an 8-bit ONNX export. Macro F1 0.612 on the 3,000 ArSarcasm-v2 test tweets (the quick word model: "
-        + "0.54); ArSarcasm-v2 reuses tweets from ASTD and SemEval-2017, so some test tweets may have been in its training "
+    note: "CAMeLBERT Mix SA (Inoue et al. 2021), fine-tuned on public Arabic sentiment tweets, run in the "
+        + "browser as an 8-bit ONNX export. Macro F1 0.612 on 3,000 held-out Arabic test tweets (the quick word model: "
+        + "0.54); some test tweets may have been in its training "
         + "data and the figure on new posts can be lower. Arabic posts only; the first 600 characters of each.",
   },
   sentiment_multi: {
