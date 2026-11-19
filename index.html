@@ -3875,6 +3875,6 @@ $("#chatform").onsubmit = e => { e.preventDefault(); chatSend($("#chatin").value
 $("#chatin").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chatSend($("#chatin").value); } });
 $("#chatsugg").addEventListener("click", e => { const b = e.target.closest("[data-q]"); if (b) chatSend(b.dataset.q); });
 </script>
-<script src="newtab.js?v=1"></script>
+<script src="newtab.js?v=2" data-mode="tool"></script>
 </body>
 </html>
