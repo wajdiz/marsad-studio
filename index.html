@@ -7,8 +7,8 @@
 <!-- No web fonts: the page loads nothing from the internet, so your posts, your address and the fact that you opened
      it stay on your machine, and the page works offline. Arabic uses the fonts your system already has. -->
 <meta name="color-scheme" content="light dark">
-<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
-<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png?v=3">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=3">
 <script>
 (function () {
   try {
@@ -63,7 +63,7 @@ h1,h2,h3,p{margin-top:0}
    controls rather than dragging the whole page sideways with it. */
 .appbar{overflow-x:hidden}
 .appbar{height:72px;background:var(--navy);color:var(--k-n-100);display:flex;align-items:center;justify-content:space-between;padding:0 26px;gap:16px;position:sticky;top:0;z-index:50}
-.branding{display:flex;align-items:center;gap:11px}
+.branding{display:flex;align-items:center;gap:11px}.brand-wm{height:30px;width:auto;display:block}.brand-tool{font-size:19px;font-weight:600;color:#62d0cf;border-inline-start:1px solid rgba(255,255,255,.25);padding-inline-start:11px}@media(max-width:540px){.brand-wm{height:22px}}
 .brand-mark{width:34px;height:34px;border-radius:50%;flex:none;display:block;
   box-shadow:0 0 0 2px var(--k-tea-55-40)}
 .brand{font-size:22px;font-weight:800}.brand-sub{color:var(--k-blu-85-40);font-size:13px;margin-top:2px}
@@ -695,7 +695,7 @@ label.pick input{margin:0}
 <body>
 <button class="skip" id="skiplink">Skip to content</button>
 <header class="appbar">
-  <div class="branding"><img class="brand-mark" src="assets/marsad-logo-128.png" alt="" width="34" height="34" decoding="async"><div><div class="brand">MARSAD Studio</div></div></div>
+  <div class="branding"><img class="brand-wm" src="assets/marsad-wordmark-light.svg?v=5" alt="MARSAD" width="157" height="30" decoding="async"><div class="brand brand-tool">Studio</div></div>
   <div class="top-right"><span id="filebar"></span><button class="sizebtn" id="helpbtn" title="Guides for every analysis, questions and answers">Help</button><button class="sizebtn" id="langbtn" lang="ar" title="Show the menus in Arabic">العربية</button><button class="sizebtn" id="lookbtn" data-act="settings" title="Settings"><span class="gear">&#9881;</span><span class="lbl">Settings</span></button><span class="pill ondev" id="engine" title="Status: Ready."><span class="dot" aria-hidden="true"></span><span class="ondev-state"></span></span></div>
 </header>
 <nav class="mobile-nav" id="mobileNav" aria-label="Sections"></nav>
